@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0d0b0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Midgard">
+  <meta name="description" content="Midgard — kooperacyjna cyfrowa planszówka w świecie nordyckich mitów.">
+  <title>Midgard</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/ikony/ikona-32.png">
+  <link rel="apple-touch-icon" href="assets/img/ikony/ikona-180.png">
+  <link rel="preload" href="assets/fonts/cinzel-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/alegreya-sans-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- EKRAN STARTOWY -->
+  <section id="screen-start" class="screen active">
+    <div class="start-art"></div>
+    <div class="start-shade"></div>
+    <div class="start-content">
+      <img class="start-logo" src="assets/img/marka/logo.webp" alt="Midgard">
+      <p class="start-tag">Kooperacyjna saga dla 1–8 graczy przy jednym stole</p>
+      <div class="start-menu">
+        <button class="btn btn-gold" id="btn-continue" hidden>Kontynuuj bitwę</button>
+        <button class="btn btn-gold" id="btn-new">Bitwa: Kurhan nad fiordem</button>
+        <button class="btn" id="btn-rules">Jak grać</button>
+      </div>
+      <p class="start-version" id="version"></p>
+    </div>
+  </section>
+
+  <!-- EKRAN BITWY -->
+  <section id="screen-battle" class="screen">
+    <header class="topbar">
+      <button class="icon-btn" id="btn-menu" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="top-title">
+        <span class="top-scenario">Kurhan nad fiordem</span>
+        <span class="top-goal" id="top-goal"></span>
+      </div>
+      <div class="top-stats">
+        <div class="stat" id="stat-round"></div>
+        <div class="stat" id="stat-frost"></div>
+        <div class="stat hamingja" id="stat-hamingja" title="Hamingja — szczęście rodu"></div>
+      </div>
+    </header>
+
+    <aside class="panel heroes" id="panel-heroes"></aside>
+
+    <main class="board-wrap" id="board-wrap">
+      <canvas id="board"></canvas>
+      <div class="banner" id="banner"></div>
+    </main>
+
+    <aside class="panel norns" id="panel-norns">
+      <h2 class="panel-title">Nici Norn</h2>
+      <p class="panel-sub">Tak zagrają wrogowie po waszej naradzie</p>
+      <ol class="intents" id="intent-list"></ol>
+      <div class="foresight" id="foresight"></div>
+    </aside>
+
+    <footer class="bottombar">
+      <div class="hint" id="hint"></div>
+      <div class="bottom-row">
+        <div class="dice" id="dice"></div>
+        <div class="actions">
+          <button class="btn btn-small" id="btn-reroll"></button>
+          <button class="btn btn-small" id="btn-undo">Cofnij</button>
+          <button class="btn btn-gold" id="btn-end">Koniec narady</button>
+        </div>
+      </div>
+    </footer>
+  </section>
+
+  <!-- NAKŁADKI -->
+  <div class="overlay" id="ov-intro" hidden>
+    <div class="sheet parchment">
+      <h2 class="sheet-title">Kurhan nad fiordem</h2>
+      <div class="saga" id="intro-text"></div>
+      <div class="goal-box"><strong>Cel:</strong> <span id="intro-goal"></span></div>
+      <div class="sheet-actions">
+        <button class="btn" id="btn-intro-rules">Jak grać</button>
+        <button class="btn btn-gold" id="btn-intro-go">Do boju</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-rules" hidden>
+    <div class="sheet parchment sheet-wide">
+      <h2 class="sheet-title">Jak grać</h2>
+      <div class="rules" id="rules-text"></div>
+      <div class="sheet-actions"><button class="btn btn-gold" id="btn-rules-close">Rozumiem</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-menu" hidden>
+    <div class="sheet iron">
+      <h2 class="sheet-title">Menu</h2>
+      <div class="menu-list">
+        <button class="btn" id="m-resume">Wróć do bitwy</button>
+        <button class="btn" id="m-rules">Jak grać</button>
+        <button class="btn" id="m-restart">Zacznij bitwę od nowa</button>
+        <button class="btn" id="m-exit">Wyjdź do menu głównego</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-ansuz" hidden>
+    <div class="sheet iron">
+      <h2 class="sheet-title">Ansuz — wola bogów</h2>
+      <p class="sheet-sub">W którą runę ma się zmienić?</p>
+      <div class="ansuz-choices" id="ansuz-choices"></div>
+      <div class="sheet-actions"><button class="btn" id="btn-ansuz-cancel">Anuluj</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-confirm" hidden>
+    <div class="sheet iron">
+      <h2 class="sheet-title" id="confirm-title"></h2>
+      <p class="sheet-sub" id="confirm-text"></p>
+      <div class="sheet-actions">
+        <button class="btn" id="confirm-no">Nie</button>
+        <button class="btn btn-gold" id="confirm-yes">Tak</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-end" hidden>
+    <div class="sheet parchment">
+      <h2 class="sheet-title" id="end-title"></h2>
+      <div class="saga" id="end-text"></div>
+      <div class="sheet-actions">
+        <button class="btn" id="btn-end-menu">Menu główne</button>
+        <button class="btn btn-gold" id="btn-end-again">Zagraj ponownie</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

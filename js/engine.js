@@ -1,0 +1,493 @@
+// Zasady bitwy. Czysta logika bez DOM, żeby dało się ją testować.
+// Każda akcja zmienia stan i zwraca listę zdarzeń do animacji.
+
+import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO } from './data.js';
+import { key, parseKey, distance, neighbors } from './hex.js';
+
+export const SAVE_VERSION = 1;
+
+// ---------- pomocnicze ----------
+
+export function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+function rng(state) {
+  // deterministyczny generator (mulberry32) zapisany w stanie
+  let t = (state.seed = (state.seed + 0x6d2b79f5) >>> 0);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+export const cols = (s) => s.map[0].length;
+export const rows = (s) => s.map.length;
+export const terrainAt = (s, c, r) => TERRAIN[s.map[r][c]];
+export const isFrozen = (s, c) => c < s.frost;
+export const unitAt = (s, c, r) => s.units.find((u) => u.hp > 0 && u.c === c && u.r === r);
+export const unitById = (s, id) => s.units.find((u) => u.id === id);
+export const livingHeroes = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0);
+export const livingEnemies = (s) => s.units.filter((u) => u.side === 'enemy' && u.hp > 0);
+export const nb = (s, c, r) => neighbors(c, r, cols(s), rows(s));
+
+export function unitDef(u) { return u.side === 'hero' ? HEROES[u.type] : ENEMIES[u.type]; }
+
+// ---------- tworzenie bitwy ----------
+
+export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0) {
+  const s = {
+    v: SAVE_VERSION,
+    scenario: SCENARIO.id,
+    seed,
+    map: SCENARIO.map.slice(),
+    round: 0,
+    phase: 'start',
+    result: null,
+    frost: 0,
+    hamingja: 3,
+    units: [],
+    dice: [],
+    intents: [],
+    nextId: 1,
+    bossAwakeRound: null,
+    log: [],
+  };
+  for (const h of SCENARIO.heroes) {
+    const d = HEROES[h.type];
+    s.units.push({
+      id: s.nextId++, side: 'hero', type: h.type, c: h.at[0], r: h.at[1],
+      hp: d.hp, maxHp: d.hp, moveLeft: d.move, attacked: false,
+      runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false,
+    });
+  }
+  return s;
+}
+
+// ---------- ruch ----------
+
+function enterCost(s, c, r) {
+  const t = terrainAt(s, c, r);
+  return t.blocked ? Infinity : t.cost;
+}
+
+// Dijkstra po polach osiągalnych dla jednostki. Można przechodzić przez sojuszników, nie można kończyć na zajętym polu.
+export function reachable(s, u, points, reserved = null) {
+  const start = key(u.c, u.r);
+  const best = new Map([[start, { cost: 0, prev: null, end: true }]]);
+  const open = [[0, u.c, u.r]];
+  while (open.length) {
+    open.sort((a, b) => a[0] - b[0]);
+    const [cost, c, r] = open.shift();
+    if (cost > best.get(key(c, r)).cost) continue;
+    for (const [nc, nr] of nb(s, c, r)) {
+      const step = enterCost(s, nc, nr);
+      const nc2 = cost + step;
+      if (nc2 > points) continue;
+      const occ = unitAt(s, nc, nr);
+      if (occ && occ.id !== u.id && occ.side !== u.side) continue; // wróg blokuje
+      const k = key(nc, nr);
+      const end = !occ && !(reserved && reserved.has(k));
+      const prev = best.get(k);
+      if (!prev || nc2 < prev.cost) {
+        best.set(k, { cost: nc2, prev: key(c, r), end });
+        open.push([nc2, nc, nr]);
+      }
+    }
+  }
+  return best;
+}
+
+export function pathTo(map, k) {
+  const path = [];
+  let cur = k;
+  while (cur) { path.unshift(parseKey(cur)); cur = map.get(cur).prev; }
+  return path; // od startu do celu, włącznie
+}
+
+// Odległość po terenie (bez jednostek) od zbioru pól — pole odległości dla AI.
+function distanceField(s, c0, r0) {
+  const dist = new Map([[key(c0, r0), 0]]);
+  const open = [[0, c0, r0]];
+  while (open.length) {
+    open.sort((a, b) => a[0] - b[0]);
+    const [d, c, r] = open.shift();
+    if (d > dist.get(key(c, r))) continue;
+    for (const [nc, nr] of nb(s, c, r)) {
+      const step = enterCost(s, nc, nr);
+      if (!isFinite(step)) continue;
+      const nd = d + step;
+      const k = key(nc, nr);
+      if (!dist.has(k) || nd < dist.get(k)) { dist.set(k, nd); open.push([nd, nc, nr]); }
+    }
+  }
+  return dist;
+}
+
+// ---------- walka ----------
+
+export function rangeOf(s, u) {
+  const d = unitDef(u);
+  let rg = d.range;
+  if (rg > 1 && terrainAt(s, u.c, u.r).range) rg += terrainAt(s, u.c, u.r).range;
+  return rg;
+}
+
+export function heroAttackValue(u) {
+  const d = HEROES[u.type];
+  let v = d.atk + 2 * u.runes.T;
+  if (u.type === 'berserker') v += Math.floor((u.maxHp - u.hp) / 4);
+  return v;
+}
+
+export function adjacentHeroes(s, u) {
+  return nb(s, u.c, u.r).map(([c, r]) => unitAt(s, c, r)).filter((x) => x && x.side === 'hero' && x.id !== u.id);
+}
+
+// Ile obrażeń faktycznie dostanie bohater (przed tarczą) i z czego to wynika.
+export function heroDamage(s, target, base) {
+  const parts = [];
+  const wall = adjacentHeroes(s, target).length ? 1 : 0;
+  if (wall) parts.push(`mur tarcz −${wall}`);
+  const t = terrainAt(s, target.c, target.r);
+  if (t.def > 0) parts.push(`${t.name.toLowerCase()} −${t.def}`);
+  if (t.def < 0) parts.push(`${t.name.toLowerCase()} +${-t.def}`);
+  let shieldmaid = 0;
+  if (target.type !== 'tarczowniczka' && adjacentHeroes(s, target).some((h) => h.type === 'tarczowniczka')) {
+    shieldmaid = 1; parts.push('Tarczowniczka −1');
+  }
+  const dmg = Math.max(1, base - wall - t.def - shieldmaid);
+  return { dmg, parts };
+}
+
+function applyHeroDamage(s, target, dmg) {
+  const absorbed = Math.min(target.shield, dmg);
+  target.shield -= absorbed;
+  target.hp = Math.max(0, target.hp - (dmg - absorbed));
+  return absorbed;
+}
+
+// ---------- runy ----------
+
+export function rollDice(s) {
+  const n = 2 * livingHeroes(s).length;
+  s.dice = [];
+  for (let i = 0; i < n; i++) s.dice.push({ id: i, face: DIE_FACES[Math.floor(rng(s) * 6)], used: false });
+}
+
+export function rerollDice(s) {
+  if (s.hamingja <= 0) return false;
+  s.hamingja--;
+  for (const d of s.dice) if (!d.used) d.face = DIE_FACES[Math.floor(rng(s) * 6)];
+  return true;
+}
+
+// face: runa, jaką staje się kość (dla Ansuz wybrana przez graczy)
+export function assignRune(s, dieId, heroId, face) {
+  const die = s.dice.find((d) => d.id === dieId);
+  const h = unitById(s, heroId);
+  if (!die || die.used || !h || h.hp <= 0 || h.side !== 'hero') return null;
+  const f = die.face === 'N' ? face : die.face;
+  if (!f || f === 'N') return null;
+  die.used = true; die.assignedTo = heroId; die.as = f;
+  const ev = [{ type: 'rune', heroId, face: f }];
+  if (f === 'R') h.moveLeft += 2;
+  else if (f === 'A') h.shield += 2;
+  else if (f === 'B') {
+    const before = h.hp;
+    h.hp = Math.min(h.maxHp, h.hp + 3);
+    ev.push({ type: 'heal', id: h.id, amount: h.hp - before, hp: h.hp });
+  }
+  if (f !== 'B') h.runes[f] = (h.runes[f] || 0) + 1;
+  return ev;
+}
+
+// ---------- akcje bohaterów (narada) ----------
+
+export function heroMoves(s, h) {
+  if (h.hp <= 0 || s.phase !== 'narada') return new Map();
+  return reachable(s, h, h.moveLeft);
+}
+
+export function moveHero(s, heroId, c, r) {
+  const h = unitById(s, heroId);
+  const map = heroMoves(s, h);
+  const k = key(c, r);
+  const e = map.get(k);
+  if (!e || !e.end || (c === h.c && r === h.r)) return null;
+  const path = pathTo(map, k);
+  h.moveLeft -= e.cost;
+  h.c = c; h.r = r;
+  return [{ type: 'move', id: h.id, path }];
+}
+
+export function attackTargets(s, h) {
+  if (h.hp <= 0 || h.attacked || s.phase !== 'narada') return [];
+  const rg = rangeOf(s, h);
+  return livingEnemies(s).filter((e) => distance(h.c, h.r, e.c, e.r) <= rg);
+}
+
+function hitEnemy(s, h, e, ev) {
+  const raw = heroAttackValue(h);
+  const dmg = Math.max(1, raw - (ENEMIES[e.type].armor || 0));
+  e.hp = Math.max(0, e.hp - dmg);
+  ev.push({ type: 'hit', from: h.id, to: e.id, dmg, hp: e.hp, ranged: distance(h.c, h.r, e.c, e.r) > 1 });
+  if (e.hp <= 0) {
+    ev.push({ type: 'death', id: e.id });
+    s.intents = s.intents.filter((i) => i.unitId !== e.id);
+  }
+}
+
+export function heroAttack(s, heroId, enemyId) {
+  const h = unitById(s, heroId);
+  const e = unitById(s, enemyId);
+  if (!attackTargets(s, h).includes(e)) return null;
+  h.attacked = true;
+  const ev = [];
+  hitEnemy(s, h, e, ev);
+  checkEnd(s, ev);
+  return ev;
+}
+
+export function canUsePower(s, h) {
+  if (!h || h.hp <= 0 || s.phase !== 'narada' || h.runes.K <= 0) return false;
+  if (h.type === 'berserker') return nb(s, h.c, h.r).some(([c, r]) => { const u = unitAt(s, c, r); return u && u.side === 'enemy'; });
+  if (h.type === 'tarczowniczka') return !h.guard;
+  if (h.type === 'volva') return s.intents.some((i) => !i.canceled);
+  return false;
+}
+
+export function usePower(s, heroId, targetId = null) {
+  const h = unitById(s, heroId);
+  if (!canUsePower(s, h)) return null;
+  const ev = [];
+  if (h.type === 'berserker') {
+    const foes = nb(s, h.c, h.r).map(([c, r]) => unitAt(s, c, r)).filter((u) => u && u.side === 'enemy');
+    ev.push({ type: 'power', id: h.id, power: 'wir' });
+    for (const e of foes) hitEnemy(s, h, e, ev);
+  } else if (h.type === 'tarczowniczka') {
+    h.guard = true;
+    ev.push({ type: 'power', id: h.id, power: 'oslona' });
+  } else if (h.type === 'volva') {
+    const it = s.intents.find((i) => i.unitId === targetId && !i.canceled);
+    if (!it) return null;
+    for (const i of s.intents) if (i.unitId === targetId) i.canceled = true;
+    ev.push({ type: 'power', id: h.id, power: 'nic', target: targetId });
+  }
+  h.runes.K--;
+  checkEnd(s, ev);
+  return ev;
+}
+
+// ---------- tura wroga: nici Norn ----------
+
+function heroOrderFor(s, e) {
+  const field = distanceField(s, e.c, e.r);
+  return livingHeroes(s)
+    .map((h) => ({ h, d: field.get(key(h.c, h.r)) ?? 999 }))
+    .sort((a, b) => a.d - b.d || a.h.hp - b.h.hp || a.h.id - b.h.id)
+    .map((x) => x.h);
+}
+
+function bestEnd(map, filter, score) {
+  let best = null;
+  for (const [k, v] of map) {
+    if (!v.end) continue;
+    const [c, r] = parseKey(k);
+    if (!filter(c, r, v)) continue;
+    const sc = score(c, r, v);
+    if (!best || sc < best.sc) best = { k, sc };
+  }
+  return best && best.k;
+}
+
+export function planIntents(s) {
+  s.intents = [];
+  const reserved = new Set();
+  let order = 1;
+  for (const e of livingEnemies(s)) {
+    const d = ENEMIES[e.type];
+    const map = reachable(s, e, d.move, reserved);
+    const targets = heroOrderFor(s, e);
+    if (!targets.length) break;
+    let intent = null;
+    const ranged = d.range > 1;
+    for (const h of targets) {
+      const inRange = (c, r) => distance(c, r, h.c, h.r) <= (ranged ? d.range + (terrainAt(s, c, r).range || 0) : 1);
+      const curOk = inRange(e.c, e.r);
+      let dest;
+      if (ranged) {
+        // łucznik: strzela z miejsca albo z pola jak najdalej od ostrzy
+        const minHeroDist = (c, r) => Math.min(...livingHeroes(s).map((x) => distance(c, r, x.c, x.r)));
+        if (curOk && minHeroDist(e.c, e.r) >= 2) dest = key(e.c, e.r);
+        else dest = bestEnd(map, inRange, (c, r, v) => -minHeroDist(c, r) * 10 + v.cost);
+      } else {
+        dest = curOk ? key(e.c, e.r) : bestEnd(map, inRange, (c, r, v) => v.cost);
+      }
+      if (dest) {
+        intent = { unitId: e.id, kind: ranged ? 'shot' : 'melee', path: pathTo(map, dest), attack: [h.c, h.r], dmg: d.atk, targetId: h.id };
+        break;
+      }
+    }
+    if (!intent) {
+      // marsz w stronę najbliższego bohatera
+      const h = targets[0];
+      const field = distanceField(s, h.c, h.r);
+      const dest = bestEnd(map, () => true, (c, r, v) => (field.get(key(c, r)) ?? 999) * 10 + v.cost);
+      intent = { unitId: e.id, kind: 'march', path: pathTo(map, dest || key(e.c, e.r)), attack: null, dmg: 0, targetId: h.id };
+    }
+    const last = intent.path[intent.path.length - 1];
+    reserved.add(key(last[0], last[1]));
+    intent.order = order++;
+    intent.canceled = false;
+    s.intents.push(intent);
+
+    // Pan Kurhanu przyzywa draugra co drugą rundę od przebudzenia (począwszy od następnej)
+    if (e.type === 'pan-kurhanu' && s.bossAwakeRound !== null && (s.round - s.bossAwakeRound) % 2 === 1) {
+      const spot = freeNearBarrow(s, reserved);
+      if (spot) {
+        reserved.add(key(spot[0], spot[1]));
+        s.intents.push({ unitId: e.id, kind: 'summon', path: [[e.c, e.r]], attack: null, spawn: spot, dmg: 0, order: order++, canceled: false });
+      }
+    }
+  }
+}
+
+function barrowHex(s) {
+  for (let r = 0; r < rows(s); r++) for (let c = 0; c < cols(s); c++) if (s.map[r][c] === 'K') return [c, r];
+  return null;
+}
+
+function freeNearBarrow(s, reserved = new Set(), prefer = null) {
+  const b = barrowHex(s);
+  const ok = (c, r) => !terrainAt(s, c, r).blocked && !unitAt(s, c, r) && !reserved.has(key(c, r));
+  if (prefer && ok(prefer[0], prefer[1])) return prefer;
+  // najbliższe wolne pole od kurhanu (BFS po odległości)
+  const all = [];
+  for (let r = 0; r < rows(s); r++) for (let c = 0; c < cols(s); c++) if (ok(c, r)) all.push([distance(c, r, b[0], b[1]), c, r]);
+  all.sort((a, b2) => a[0] - b2[0] || b2[1] - a[1] || a[2] - b2[2]);
+  return all.length ? [all[0][1], all[0][2]] : null;
+}
+
+function spawn(s, type, at, ev) {
+  const spot = freeNearBarrow(s, new Set(), at);
+  if (!spot) return null;
+  const d = ENEMIES[type];
+  const u = { id: s.nextId++, side: 'enemy', type, c: spot[0], r: spot[1], hp: d.hp, maxHp: d.hp };
+  s.units.push(u);
+  ev.push({ type: 'spawn', id: u.id, unit: clone(u) });
+  if (type === 'pan-kurhanu') s.bossAwakeRound = s.round;
+  return u;
+}
+
+// ---------- przebieg rundy ----------
+
+export function startRound(s) {
+  const ev = [];
+  s.round++;
+  for (const h of livingHeroes(s)) {
+    h.moveLeft = HEROES[h.type].move;
+    h.attacked = false;
+    h.runes = { T: 0, A: 0, R: 0, K: 0, B: 0 };
+    h.shield = 0;
+    h.guard = false;
+  }
+  ev.push({ type: 'round', round: s.round });
+  for (const w of SCENARIO.waves[s.round] || []) spawn(s, w.type, w.at, ev);
+  s.phase = 'narada';
+  planIntents(s);
+  rollDice(s);
+  return ev;
+}
+
+export function upcomingWaves(s, ahead = 2) {
+  const out = [];
+  for (let r = s.round + 1; r <= s.round + ahead; r++) if (SCENARIO.waves[r]) out.push({ round: r, units: SCENARIO.waves[r].map((w) => w.type) });
+  return out;
+}
+
+function checkEnd(s, ev) {
+  if (s.result) return;
+  const boss = s.units.find((u) => u.type === 'pan-kurhanu');
+  if (boss && boss.hp <= 0) {
+    s.result = 'win'; s.phase = 'koniec';
+    for (const e of livingEnemies(s)) { e.hp = 0; ev.push({ type: 'death', id: e.id, crumble: true }); }
+    ev.push({ type: 'end', result: 'win' });
+  } else if (!livingHeroes(s).length) {
+    s.result = 'lose'; s.phase = 'koniec';
+    ev.push({ type: 'end', result: 'lose' });
+  }
+}
+
+// Koniec narady: wrogowie wykonują swoje zamiary, potem mróz, potem nowa runda.
+export function resolveEnemyTurn(s) {
+  if (s.phase !== 'narada') return [];
+  s.phase = 'wrog';
+  const ev = [{ type: 'phase', phase: 'wrog' }];
+  for (const it of s.intents) {
+    if (s.result) break;
+    const e = unitById(s, it.unitId);
+    if (!e || e.hp <= 0) continue;
+    if (it.canceled) { ev.push({ type: 'cut', id: e.id }); continue; }
+
+    if (it.kind === 'summon') {
+      spawn(s, 'draugr', it.spawn, ev);
+      continue;
+    }
+
+    // ruch po zaplanowanej ścieżce; staje, gdy droga zablokowana
+    const walked = [[e.c, e.r]];
+    let lastFree = 0;
+    for (let i = 1; i < it.path.length; i++) {
+      const [c, r] = it.path[i];
+      const occ = unitAt(s, c, r);
+      if (occ && occ.side !== e.side) break;
+      walked.push([c, r]);
+      if (!occ) lastFree = walked.length - 1;
+    }
+    const finalPath = walked.slice(0, lastFree + 1);
+    const [fc, fr] = finalPath[finalPath.length - 1];
+    if (fc !== e.c || fr !== e.r) { e.c = fc; e.r = fr; ev.push({ type: 'move', id: e.id, path: finalPath }); }
+
+    if (!it.attack) continue;
+    const d = ENEMIES[e.type];
+    const rg = d.range > 1 ? d.range + (terrainAt(s, e.c, e.r).range || 0) : 1;
+    const [ac, ar] = it.attack;
+    let target = unitAt(s, ac, ar);
+    if (distance(e.c, e.r, ac, ar) > rg || !target || target.side !== 'hero') {
+      ev.push({ type: 'miss', from: e.id, at: [ac, ar], ranged: d.range > 1, reason: distance(e.c, e.r, ac, ar) > rg ? 'far' : 'empty' });
+      continue;
+    }
+    // Tarczowniczka przejmuje cios
+    const guard = livingHeroes(s).find((h) => h.type === 'tarczowniczka' && h.guard && h.id !== target.id && distance(h.c, h.r, target.c, target.r) === 1);
+    let redirected = false;
+    if (guard) { target = guard; redirected = true; }
+    const { dmg, parts } = heroDamage(s, target, it.dmg);
+    const absorbed = applyHeroDamage(s, target, dmg);
+    ev.push({ type: 'hit', from: e.id, to: target.id, dmg: dmg - absorbed, absorbed, hp: target.hp, shield: target.shield, parts, redirected, ranged: d.range > 1 });
+    if (target.hp <= 0) ev.push({ type: 'death', id: target.id });
+    checkEnd(s, ev);
+  }
+  if (!s.result) endOfRound(s, ev);
+  return ev;
+}
+
+function endOfRound(s, ev) {
+  // mróz
+  if (s.round >= SCENARIO.frostStart) {
+    s.frost = Math.min(cols(s), s.round - SCENARIO.frostStart + 1);
+    ev.push({ type: 'frost', frost: s.frost });
+    for (const h of livingHeroes(s)) {
+      if (isFrozen(s, h.c)) {
+        h.hp = Math.max(0, h.hp - SCENARIO.frostDamage);
+        ev.push({ type: 'hit', from: null, to: h.id, dmg: SCENARIO.frostDamage, absorbed: 0, hp: h.hp, frost: true });
+        if (h.hp <= 0) ev.push({ type: 'death', id: h.id });
+      }
+    }
+    checkEnd(s, ev);
+    if (s.result) return;
+  }
+  if (s.round >= SCENARIO.maxRounds) {
+    s.result = 'lose'; s.phase = 'koniec';
+    ev.push({ type: 'end', result: 'lose', reason: 'czas' });
+    return;
+  }
+  ev.push(...startRound(s));
+}
