@@ -6,7 +6,7 @@ import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES } from './
 import { key } from './hex.js';
 import { audio } from './audio.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);

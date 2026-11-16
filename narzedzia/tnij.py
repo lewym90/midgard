@@ -42,6 +42,11 @@ HEROES = {
     'berserker': ('bohater-berserker.png', (650, 180, 200)),
     'tarczowniczka': ('bohater-tarczowniczka.png', (585, 205, 205)),
     'volva': ('bohater-volva.png', (570, 195, 195)),
+    'skald': ('bohater-skald.png', (450, 225, 200)),
+    'jarl': ('bohater-jarl.png', (500, 205, 200)),
+    'mistrz-run': ('bohater-mistrz-run.png', (540, 230, 200)),
+    'lowczyni': ('bohater-lowczyni.png', (470, 250, 200)),
+    'ulfhedinn': ('bohater-ulfhedinn.png', (690, 370, 220)),
 }
 for key, (fn, (cx, cy, r)) in HEROES.items():
     im = src(fn).convert('RGB')
