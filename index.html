@@ -86,6 +86,7 @@
     <nav class="o-hud-dol" id="o-hud-dol">
       <button class="o-med" id="o-zbierz"><span class="o-med-k"><img src="assets/img/ui/ak-zbierz.webp" alt=""></span><span class="o-med-t">Zbierz</span></button>
       <button class="o-med" id="o-bohaterowie"><span class="o-med-k"><img src="assets/img/ui/ak-bohaterowie.webp" alt=""></span><span class="o-med-t">Bohaterowie</span></button>
+      <button class="o-med" id="o-mapa-btn"><span class="o-med-k"><img src="assets/img/ui/ak-mapa.webp" alt=""></span><span class="o-med-t">Mapa</span></button>
       <button class="o-med" id="o-budowa"><span class="o-med-k"><img src="assets/img/ui/ak-budowa.webp" alt=""></span><span class="o-med-t">Budowa</span></button>
       <button class="o-med o-med-duzy" id="o-wyprawa"><span class="o-med-k"><img src="assets/img/ui/ak-wyprawa.webp" alt=""></span><span class="o-med-t">Wyprawa</span></button>
     </nav>
@@ -186,6 +187,20 @@
       <h2 class="sheet-title">Konto</h2>
       <div id="konto-body"></div>
       <div class="sheet-actions"><button class="btn btn-gold" id="btn-konto-close">Zamknij</button></div>
+    </div>
+  </div>
+
+  <div class="overlay mapa-ov" id="ov-mapa" hidden>
+    <div class="mapa-ramka rama">
+      <button class="o-x" id="mapa-zamknij" aria-label="Zamknij"></button>
+      <h2 class="wstega mapa-tytul">Midgard</h2>
+      <div class="mapa-obraz">
+        <img src="assets/img/tlo/mapa-swiata.webp" alt="Mapa Midgardu">
+        <button class="mapa-cel" id="mapa-kurhan" style="left:64.6%;top:69%">
+          <span class="mapa-pin"></span><span class="mapa-etyk">Kurhan nad fiordem</span>
+        </button>
+      </div>
+      <p class="mapa-opis">Stuknij cel, żeby wyruszyć. Kolejne cele: wioski jarłów, kamienny krąg i Lodowa Ściana na północy pojawią się wraz z rozwojem gry.</p>
     </div>
   </div>
 

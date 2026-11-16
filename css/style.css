@@ -81,7 +81,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ekran startowy */
 #screen-start { overflow: hidden; }
-.start-art { position: absolute; inset: -3%; background: url(../assets/img/tlo/key-art.webp) center 40%/cover no-repeat; animation: kenburns 40s ease-in-out infinite alternate; }
+.start-art { position: absolute; inset: -3%; background: url(../assets/img/tlo/start.webp) center 45%/cover no-repeat; animation: kenburns 40s ease-in-out infinite alternate; }
 @keyframes kenburns { from { transform: scale(1.0) translate(0, 0); } to { transform: scale(1.08) translate(-1.5%, 1%); } }
 .start-shade { position: absolute; inset: 0; background:
   radial-gradient(ellipse at 50% 25%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.75) 100%),
@@ -528,3 +528,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pick-stats span { white-space: nowrap; }
 
 @media (min-width: 900px) and (max-width: 1300px) { .intent { grid-template-columns: 1.4rem minmax(0, 1fr); } .intent-token { display: none; } }
+
+/* ---------- mapa świata ---------- */
+.mapa-ov { background: rgba(5,4,3,0.88); backdrop-filter: none; -webkit-backdrop-filter: none; animation-duration: 0.18s; padding: calc(1.6rem + var(--safe-t)) 1rem calc(1rem + var(--safe-b)); }
+.mapa-ramka { position: relative; width: min(100%, 72rem, calc((100vh - 9rem) * 1.78 + 4rem)); padding: 0.4rem 0.4rem 0.2rem; text-align: center; }
+.mapa-tytul { position: absolute; left: 50%; top: -2.9rem; transform: translateX(-50%); font-size: 1.15rem; z-index: 2; }
+.mapa-obraz { position: relative; width: 100%; aspect-ratio: 1672 / 941; border-radius: 0.2rem; overflow: hidden; }
+.mapa-obraz > img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.mapa-cel { position: absolute; transform: translate(-50%, -100%); padding: 0; border: none; background: none; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+.mapa-pin { width: 2.6rem; height: 3.1rem; background: url(../assets/img/ui/tarcza.webp) center/contain no-repeat; filter: drop-shadow(0 0 0.6rem rgba(255,90,60,0.9)) drop-shadow(0 0.2rem 0.3rem #000); animation: pinPuls 1.6s ease-in-out infinite; }
+@keyframes pinPuls { 50% { transform: translateY(-0.3rem); filter: drop-shadow(0 0 1.1rem rgba(255,120,80,1)) drop-shadow(0 0.4rem 0.4rem #000); } }
+.mapa-etyk { padding: 0.25rem 0.6rem; border-radius: 0.3rem; background: rgba(10,8,6,0.88); border: 1px solid var(--gold); font-family: var(--display); font-weight: 700; font-size: 0.82rem; color: var(--gold-hi); white-space: nowrap; }
+.mapa-opis { margin: 0.6rem 0.4rem 0.2rem; color: var(--ink-dim); font-size: 0.9rem; }
+@media (max-height: 560px) and (orientation: landscape) { .mapa-opis { display: none; } .mapa-ramka { width: min(100%, calc((100vh - 5rem) * 1.78)); } .mapa-tytul { display: none; } }

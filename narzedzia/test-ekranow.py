@@ -23,6 +23,7 @@ SPRAWDZ = """(() => {
     const r = sv.getBoundingClientRect(), p = sv.parentElement.getBoundingClientRect();
     if (r.width > p.width + 2 || r.height > p.height + 2) out.push(`znak SVG większy niż pojemnik (${Math.round(r.width)}×${Math.round(r.height)} w ${Math.round(p.width)}×${Math.round(p.height)})`);
   }
+  for (const el of document.querySelectorAll('.overlay:not([hidden]) .mapa-ramka, .overlay:not([hidden]) .sheet')) { const r = el.getBoundingClientRect(); if (r.right > vw + 2 || r.left < -2 || r.bottom > vh + 2 || r.top < -2) out.push(`okno ${el.className.split(' ')[0]} wychodzi poza ekran`); }
   for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-plak, .o-med, .o-herb, .o-sheet')) {
     if (!widoczny(el)) continue;
     const r = el.getBoundingClientRect();
@@ -79,6 +80,9 @@ async def scenariusz(przegl, nazwa_p, tag, W, H):
     await zrzut('start')
     await pg.click('#btn-osada'); await pg.wait_for_timeout(2500)
     await zrzut('osada')
+    await pg.click('#o-mapa-btn'); await pg.wait_for_timeout(700)
+    await zrzut('mapa')
+    await pg.click('#mapa-zamknij'); await pg.wait_for_timeout(300)
     await pg.click('#o-wyprawa'); await pg.wait_for_timeout(700)
     if await pg.is_visible('#ov-confirm'): await pg.click('#confirm-yes'); await pg.wait_for_timeout(700)
     await zrzut('druzyna')

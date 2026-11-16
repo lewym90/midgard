@@ -39,6 +39,25 @@ const OGIEN = {
   chata_volvy: [[0.5, 0.55, 0.7]], hala_wojow: [[0.62, 0.8, 0.6]], skarbiec: [[0.1, 0.68, 0.6]], swiatynia: [[0.25, 0.86, 0.5], [0.55, 0.86, 0.5]],
   kopalnia: [[0.28, 0.32, 0.4]], farma: [[0.6, 0.35, 0.35]], magazyn: [[0.25, 0.4, 0.35]], brama: [[0.22, 0.75, 0.5], [0.78, 0.75, 0.5]],
 };
+// Wygląd budynku zależny od poziomu: [od poziomu, obraz]
+const WARIANT = { dlugi_dom: [[7, 'dlugi_dom-3'], [4, 'dlugi_dom-2']], tartak: [[5, 'tartak-2']], kopalnia: [[5, 'kopalnia-2']], farma: [[5, 'farma-2']], magazyn: [[5, 'magazyn-2']] };
+const SKALA_W = { 'dlugi_dom-2': 2.0, 'dlugi_dom-3': 2.15, 'tartak-2': 1.5, 'kopalnia-2': 1.55, 'farma-2': 1.6, 'magazyn-2': 1.45 };
+const DYM_W = { 'dlugi_dom-2': [[0.38, 0.2]], 'dlugi_dom-3': [[0.36, 0.17]], 'kopalnia-2': [[0.83, 0.2]] };
+const OGIEN_W = {
+  'dlugi_dom-2': [[0.6, 0.78, 0.5], [0.76, 0.72, 0.5]], 'dlugi_dom-3': [[0.46, 0.8, 0.6], [0.67, 0.8, 0.6], [0.16, 0.38, 0.4]],
+  'tartak-2': [[0.45, 0.4, 0.35]], 'kopalnia-2': [[0.84, 0.6, 1.0], [0.3, 0.55, 0.4]], 'farma-2': [[0.45, 0.42, 0.3]], 'magazyn-2': [[0.42, 0.62, 0.35]],
+};
+// Dekoracje wokół osady (współrzędne świata, poza siatką zabudowy)
+const DEKORACJE = [
+  ['dek-sosna', 300, 395, 70], ['dek-sosna', 1265, 330, 64], ['dek-sosna', 250, 560, 58], ['dek-glazy', 1225, 455, 70],
+  ['dek-beczki', 548, 300, 48], ['dek-woz', 455, 352, 72], ['dek-stog', 1000, 282, 60], ['dek-drewno', 1092, 338, 70],
+  ['dek-pochodnia', 712, 214, 24], ['dek-sztandar', 760, 206, 36], ['dek-pochodnia', 808, 214, 24],
+  ['dek-ryby', 1160, 700, 70], ['dek-tarcze', 340, 690, 70], ['dek-studnia', 390, 612, 56], ['dek-bozek', 640, 842, 34], ['dek-glazy', 905, 860, 60],
+];
+const OGIEN_DEK = { 'dek-pochodnia': [0.5, 0.12, 0.45] };
+// Mieszkańcy: [obraz, wysokość w świecie, prędkość]
+const LUDZIE = [['p-drwal', 50, 26], ['p-rybaczka', 48, 22], ['p-wojownik', 54, 28], ['p-kowal', 50, 24]];
+const ZWIERZETA = [['p-koza', 30, 14], ['p-pies', 30, 30], ['p-krowa', 38, 9]];
 // Woda fiordu na obrazie terenu (do błysków)
 const WODA = [[1536, 360], [1470, 480], [1420, 640], [1330, 780], [1180, 900], [1010, 990], [900, 1024], [1536, 1024]];
 
@@ -62,6 +81,8 @@ class Osada {
     this.nastKruki = performance.now() + 6000;
     this.statyczna = null;
     this.statKlucz = '';
+    this.ludzie = [];
+    this.zwierzeta = [];
   }
 
   // ---------- start ----------
@@ -75,7 +96,11 @@ class Osada {
     $('o-budowa').onclick = () => { audio.unlock(); this.wybrany = null; this.polePuste = null; this.tryb = null; this._pokazPanel('lista'); };
     $('o-bohaterowie').onclick = () => { audio.unlock(); this.wybrany = null; this.polePuste = null; this.tryb = null; this._pokazPanel('bohaterowie'); };
     $('o-sheet-zamknij').onclick = () => this.zamknijPanel();
+    $('o-mapa-btn').onclick = () => { audio.unlock(); this.zamknijPanel(); $('ov-mapa').hidden = false; };
+    $('mapa-zamknij').onclick = () => { $('ov-mapa').hidden = true; };
+    $('mapa-kurhan').onclick = () => { $('ov-mapa').hidden = true; onWyprawa(); };
     this._wczytajObrazy();
+    const mapaImg = new Image(); mapaImg.src = 'assets/img/tlo/mapa-swiata.webp'; mapaImg.decode?.().catch(() => {});
     this._gesty();
     new ResizeObserver(() => this._rozmiar()).observe($('o-mapa'));
     const petla = (ts) => { this._rysuj(ts); requestAnimationFrame(petla); };
@@ -91,6 +116,12 @@ class Osada {
     for (const n of nazwy) {
       const im = new Image();
       im.onload = () => { this.img[n] = im; this.statKlucz = ''; };
+      im.src = `assets/img/osada/${n}.webp`;
+    }
+    const dod = [...Object.values(WARIANT).flat().map((w) => w[1]), ...new Set(DEKORACJE.map((d) => d[0])), ...LUDZIE.map((l) => l[0]), ...ZWIERZETA.map((z) => z[0])];
+    for (const n of dod) {
+      const im = new Image();
+      im.onload = () => { this.img[n] = im; };
       im.src = `assets/img/osada/${n}.webp`;
     }
     for (const n of ['tarcza', 'medalion-maly']) {
@@ -245,7 +276,7 @@ class Osada {
       this._panelKlucz = `b${b.id}:${b.poz}:${!!b.bud}`;
       const d = O.BUDYNKI[b.typ];
       const max = d.maxPoziom || O.MAX_POZIOM;
-      let h = `<div class="o-head"><img src="assets/img/osada/${b.typ}.webp" alt=""><div><h3 class="wstega">${d.nazwa}</h3><div class="o-poz">${b.poz ? `Poziom ${b.poz}${max > 1 ? ` z ${max}` : ''}` : 'W budowie'}</div></div></div>
+      let h = `<div class="o-head"><img src="assets/img/osada/${this._obraz(b)}.webp" alt=""><div><h3 class="wstega">${d.nazwa}</h3><div class="o-poz">${b.poz ? `Poziom ${b.poz}${max > 1 ? ` z ${max}` : ''}` : 'W budowie'}</div></div></div>
         <p class="o-opis">${d.opis}</p>`;
       if (b.poz >= 1) { const e = this._efekt(o, b, b.poz); if (e) h += `<p class="o-ef">${e}</p>`; }
       if (d.produkcja && b.poz >= 1) {
@@ -457,12 +488,18 @@ class Osada {
     else this.zamknijPanel();
   }
 
+  _obraz(b) {
+    for (const [od, n] of WARIANT[b.typ] || []) if (b.poz >= od && this.img[n]) return n;
+    return b.typ;
+  }
+
   _sprite(b) {
-    const im = this.img[b.typ];
+    const klucz = this._obraz(b);
+    const im = this.img[klucz];
     const [x, y] = srodek(b.x, b.y);
-    const w = TW * (SKALA[b.typ] || SKALA_DOM);
+    const w = TW * (SKALA_W[klucz] || SKALA[b.typ] || SKALA_DOM);
     const h = im ? w * im.height / im.width : w * 0.8;
-    return { im, x: x - w / 2, y: y + TH * 0.42 - h, w, h, cx: x, cy: y };
+    return { im, klucz, x: x - w / 2, y: y + TH * 0.42 - h, w, h, cx: x, cy: y };
   }
 
   _budynekPod(wx, wy) {
@@ -549,15 +586,18 @@ class Osada {
     // dym z kominów (w przestrzeni świata)
     if (this.widok) {
       for (const b of this.widok.budynki) {
-        if (b.poz < 1 || !DYM[b.typ]) continue;
+        if (b.poz < 1) continue;
         const s = this._sprite(b);
-        for (const [fx, fy] of DYM[b.typ]) {
+        const punkty = DYM_W[s.klucz] || (s.klucz === b.typ ? DYM[b.typ] : null);
+        if (!punkty) continue;
+        for (const [fx, fy] of punkty) {
           if (Math.random() < dt * 2.2) this.dym.push({ x: s.x + s.w * fx + (Math.random() - 0.5) * 6, y: s.y + s.h * fy, r: 4 + Math.random() * 3, w: 0, zycie: 0, max: 3.5 + Math.random() * 2.5 });
         }
       }
     }
     for (const d of this.dym) { d.zycie += dt; d.y -= (12 + d.zycie * 4) * dt; d.x += (9 + Math.sin(t + d.max) * 4) * dt; d.r += 5.5 * dt; }
     this.dym = this.dym.filter((d) => d.zycie < d.max).slice(-260);
+    this._mieszkancy(dt, t);
     // kruki
     if (t * 1000 > this.nastKruki && this.kruki.length === 0) {
       const z = Math.random() < 0.5;
@@ -569,6 +609,69 @@ class Osada {
     this.kruki = this.kruki.filter((k) => k.x > -200 && k.x < SWIAT.w + 200);
   }
 
+  // ---------- mieszkańcy chodzą ścieżkami między budynkami a Długim Domem ----------
+  _trasy() {
+    const o = this.widok; if (!o) return null;
+    const dd = o.budynki.find((q) => q.typ === 'dlugi_dom'); if (!dd) return null;
+    const [dx, dy] = srodek(dd.x, dd.y);
+    const cel = [dx, dy + TH * 0.35];
+    return o.budynki.filter((q) => q !== dd && q.poz >= 1 && !['palisada', 'kamien'].includes(q.typ)).map((q) => {
+      const [qx, qy] = srodek(q.x, q.y);
+      const st = [qx, qy + TH * 0.3];
+      return { a: st, b: cel, m: [(st[0] + cel[0]) / 2 + (st[1] - cel[1]) * 0.18, (st[1] + cel[1]) / 2 - (st[0] - cel[0]) * 0.06], typ: q.typ };
+    });
+  }
+
+  _mieszkancy(dt, t) {
+    const trasy = this._trasy();
+    if (!trasy || !trasy.length) { this.ludzie = []; this.zwierzeta = []; return; }
+    const ile = Math.min(LUDZIE.length, Math.max(1, Math.ceil(trasy.length / 2)));
+    while (this.ludzie.length < ile) {
+      const [obraz, h, v] = LUDZIE[this.ludzie.length];
+      this.ludzie.push({ obraz, h, v, f: Math.random() * 6, k: Math.random(), dir: Math.random() < 0.5 ? 1 : -1, trasa: trasy[Math.floor(Math.random() * trasy.length)], postoj: 0, alfa: 0, x: 0, y: 0, idzie: true });
+    }
+    this.ludzie.length = ile;
+    for (const p of this.ludzie) {
+      if (!trasy.includes(p.trasa)) p.trasa = trasy.find((q) => q.a[0] === p.trasa.a[0] && q.a[1] === p.trasa.a[1]) || trasy[Math.floor(Math.random() * trasy.length)];
+      const T = p.trasa;
+      const L = Math.hypot(T.b[0] - T.a[0], T.b[1] - T.a[1]) || 1;
+      if (p.postoj > 0) { p.postoj -= dt; p.idzie = false; p.alfa = Math.max(0, p.alfa - dt * 2); }
+      else {
+        p.idzie = true; p.alfa = Math.min(1, p.alfa + dt * 2);
+        p.k += p.dir * p.v * dt / L;
+        if (p.k >= 1 || p.k <= 0) {
+          p.k = Math.min(1, Math.max(0, p.k));
+          p.postoj = 1.5 + Math.random() * 3;
+          if (p.k >= 1) { p.dir = -1; p.trasa = trasy[Math.floor(Math.random() * trasy.length)]; p.k = 1; }
+          else p.dir = 1;
+        }
+      }
+      const k = p.k, u = 1 - k;
+      const nx = u * u * T.a[0] + 2 * u * k * T.m[0] + k * k * T.b[0];
+      const ny = u * u * T.a[1] + 2 * u * k * T.m[1] + k * k * T.b[1];
+      if (Math.abs(nx - p.x) > 0.05) p.wPrawo = nx > p.x;
+      p.x = nx; p.y = ny;
+    }
+    // zwierzęta krążą po placu przed Długim Domem i przy farmie
+    const plac = trasy[0].b;
+    const farma = trasy.find((q) => q.typ === 'farma');
+    const miejsca = [plac, plac, farma ? farma.a : plac];
+    while (this.zwierzeta.length < ZWIERZETA.length) {
+      const i = this.zwierzeta.length, [obraz, h, v] = ZWIERZETA[i], m = miejsca[i];
+      this.zwierzeta.push({ obraz, h, v, f: Math.random() * 6, x: m[0] + 30, y: m[1] + 20, cel: null, dom: m, postoj: Math.random() * 3, alfa: 1, idzie: false });
+    }
+    this.zwierzeta.forEach((z, i) => {
+      z.dom = miejsca[i];
+      if (z.postoj > 0) { z.postoj -= dt; z.idzie = false; return; }
+      if (!z.cel) { const a = Math.random() * 6.28, r = 25 + Math.random() * 70; z.cel = [z.dom[0] + Math.cos(a) * r, z.dom[1] + Math.sin(a) * r * 0.5 + 18]; }
+      const dx = z.cel[0] - z.x, dy = z.cel[1] - z.y, d = Math.hypot(dx, dy);
+      if (d < 2) { z.cel = null; z.postoj = 2 + Math.random() * 6; z.idzie = false; return; }
+      z.idzie = true; z.wPrawo = dx > 0;
+      const krok = Math.min(d, z.v * dt);
+      z.x += dx / d * krok; z.y += dy / d * krok;
+    });
+  }
+
   _poswiata(g, x, y, r, a, kolor) {
     const gr = g.createRadialGradient(x, y, 0, x, y, r);
     gr.addColorStop(0, `rgba(${kolor},${a})`); gr.addColorStop(0.45, `rgba(${kolor},${a * 0.35})`); gr.addColorStop(1, `rgba(${kolor},0)`);
@@ -577,7 +680,7 @@ class Osada {
 
   // ---------- rysowanie ----------
   _rysuj(ts = performance.now()) {
-    if (!this.aktywna() || !this.cam || !this.W) { this._ostatni = ts; return; }
+    if (!this.aktywna() || !this.cam || !this.W || !$('ov-mapa').hidden) { this._ostatni = ts; return; }
     const dt = Math.min(0.05, Math.max(0, (ts - (this._ostatni || ts)) / 1000));
     this._ostatni = ts;
     const t = ts / 1000;
@@ -628,17 +731,33 @@ class Osada {
       gr.addColorStop(0, 'rgba(15,20,30,0.42)'); gr.addColorStop(1, 'rgba(15,20,30,0)');
       g.fillStyle = gr; g.beginPath(); g.ellipse(sx, sy, s.w * 0.52, s.w * 0.22, 0, 0, Math.PI * 2); g.fill();
     }
-    for (const b of lista) {
-      const s = this._sprite(b);
-      if (b.id === this.wybrany) {
-        romb(b.x, b.y, 1.05);
-        g.fillStyle = 'rgba(242,211,138,0.22)'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#f2d38a'; g.stroke();
-      }
-      if (s.im) {
+    const sel = o.budynki.find((b) => b.id === this.wybrany);
+    if (sel) { romb(sel.x, sel.y, 1.05); g.fillStyle = 'rgba(242,211,138,0.22)'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#f2d38a'; g.stroke(); }
+    const kolejka = [];
+    for (const b of lista) { const s = this._sprite(b); kolejka.push([s.cy + TH * 0.3, 'b', b, s]); }
+    for (const d of DEKORACJE) kolejka.push([d[2], 'd', d]);
+    for (const p of [...this.ludzie, ...this.zwierzeta]) kolejka.push([p.y, 'p', p]);
+    kolejka.sort((a, b) => a[0] - b[0]);
+    for (const [, rodzaj, x, s] of kolejka) {
+      if (rodzaj === 'b') {
+        if (!s.im) continue;
         g.save();
-        if (b.poz === 0) g.globalAlpha = 0.55;
-        if (b.id === this.wybrany) { g.shadowColor = 'rgba(255,220,140,0.9)'; g.shadowBlur = 22; }
+        if (x.poz === 0) g.globalAlpha = 0.55;
+        if (x.id === this.wybrany) { g.shadowColor = 'rgba(255,220,140,0.9)'; g.shadowBlur = 22; }
         g.drawImage(s.im, s.x, s.y, s.w, s.h);
+        g.restore();
+      } else if (rodzaj === 'd') {
+        const im = this.img[x[0]]; if (!im) continue;
+        const w = x[3], h = w * im.height / im.width;
+        g.drawImage(im, x[1] - w / 2, x[2] - h * 0.9, w, h);
+      } else {
+        const im = this.img[x.obraz]; if (!im || x.alfa <= 0) continue;
+        const h = x.h, w = h * im.width / im.height, bob = x.idzie ? Math.abs(Math.sin(t * 7 + x.f)) * 1.6 : 0;
+        g.save();
+        g.globalAlpha = x.alfa;
+        g.translate(x.x, x.y - bob);
+        if (x.wPrawo) g.scale(-1, 1);
+        g.drawImage(im, -w / 2, -h * 0.92, w, h);
         g.restore();
       }
     }
@@ -666,12 +785,18 @@ class Osada {
     for (const b of lista) {
       if (b.poz < 1) continue;
       const s = this._sprite(b);
-      for (const [fx, fy, moc] of OGIEN[b.typ] || []) {
+      for (const [fx, fy, moc] of OGIEN_W[s.klucz] || (s.klucz === b.typ ? OGIEN[b.typ] : null) || []) {
         const mig = 0.82 + 0.18 * Math.sin(t * 9 + fx * 13) * Math.sin(t * 5.3 + fy * 7);
         const a = (0.16 + 0.55 * noc) * moc * mig;
         this._poswiata(g, s.x + s.w * fx, s.y + s.h * fy, s.w * (0.18 + 0.12 * moc) * (0.9 + 0.1 * mig), a, '255,150,60');
       }
-      if (noc > 0.3 && !['palisada', 'kamien', 'ognisko'].includes(b.typ)) this._poswiata(g, s.cx, s.y + s.h * 0.55, s.w * 0.28, 0.16 * noc, '255,170,80');
+      if (noc > 0.3 && !['palisada', 'kamien', 'ognisko'].includes(b.typ) && !OGIEN_W[s.klucz]) this._poswiata(g, s.cx, s.y + s.h * 0.55, s.w * 0.28, 0.16 * noc, '255,170,80');
+    }
+    for (const d of DEKORACJE) {
+      const f = OGIEN_DEK[d[0]]; const im = this.img[d[0]]; if (!f || !im) continue;
+      const w = d[3], h = w * im.height / im.width;
+      const mig = 0.8 + 0.2 * Math.sin(t * 11 + d[1]);
+      this._poswiata(g, d[1] - w / 2 + w * f[0], d[2] - h * 0.9 + h * f[1], 46 * mig, (0.2 + 0.5 * noc) * f[2] * mig * 2, '255,150,60');
     }
     // runiczny kamień świeci na niebiesko
     for (const b of lista) if (b.typ === 'kamien' && b.poz >= 1) { const s = this._sprite(b); this._poswiata(g, s.cx, s.y + s.h * 0.45, s.w * 0.45, (0.18 + 0.25 * noc) * (0.8 + 0.2 * Math.sin(t * 1.5)), '120,200,255'); }

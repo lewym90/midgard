@@ -9,7 +9,7 @@ import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 import { osada } from './osada.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
