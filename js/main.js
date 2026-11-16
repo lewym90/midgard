@@ -10,7 +10,7 @@ import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 import { osada } from './osada.js';
 
-const VERSION = '0.8.0';
+const VERSION = '0.8.1';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -416,9 +416,9 @@ async function rozliczWyprawe(id, wynik, polegli = [], ocaleli = []) {
   try {
     const r = await konto.api('POST', '/osada/wyprawa/koniec', { id, wynik, polegli, ocaleli });
     if (r.druzyna && $('end-druzyna')) {
-      const wiersze = r.druzyna.bohaterowie.map((b) => `<div class="end-boh"><img src="assets/img/bohaterowie/${b.typ}-zeton.webp" alt=""><span><b>${HEROES[b.typ].name}</b> +${b.xp} doświadczenia${b.awans ? ` · <em>awans na poziom ${b.poz}!</em>` : ''}${b.valhalla ? ` · w Valhalli do ${godz(b.valhalla)}` : ''}</span></div>`);
+      const wiersze = r.druzyna.bohaterowie.map((b) => `<div class="end-boh"><img src="assets/img/bohaterowie/${b.typ}-zeton.webp" alt=""><span><b>${HEROES[b.typ].name}</b> <img class="ik-mini" src="assets/img/osada/ik-doswiadczenie.webp" alt="">+${b.xp} doświadczenia${b.awans ? ` · <em>awans na poziom ${b.poz}!</em>` : ''}${b.valhalla ? ` · <img class="ik-mini" src="assets/img/osada/ik-valhalla.webp" alt="">w Valhalli do ${godz(b.valhalla)}` : ''}</span></div>`);
       const st = Object.entries(r.druzyna.straty || {});
-      if (st.length) wiersze.push(`<div class="end-boh end-straty">Polegli z wojska: ${st.map(([t, n]) => `${ODDZIALY[t].name} ×${n}`).join(', ')}</div>`);
+      if (st.length) wiersze.push(`<div class="end-boh end-straty"><img class="ik-mini" src="assets/img/osada/ik-wojsko.webp" alt="">Polegli z wojska: ${st.map(([t, n]) => `${ODDZIALY[t].name} ×${n}`).join(', ')}</div>`);
       $('end-druzyna').innerHTML = wiersze.join('');
     }
     const d = r.lup.dodane, st = r.lup.stracone;

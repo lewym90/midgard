@@ -48,7 +48,7 @@ export function renderHeroes(v, sel, handlers) {
     const runeChips = Object.entries(u.runes).flatMap(([f, n]) => Array.from({ length: n }, () => `<span class="rune-chip" title="${RUNES[f].name}">${runeSvg(f)}</span>`)).join('');
     const powerOk = !dead && v.phase === 'narada' && canUsePower(v, u);
     card.innerHTML = `
-      ${u.oddzial ? `<div class="hero-avatar troop-av" style="--img:url(${tokenUrl(u)})"><span>${d.name[0]}</span></div>` : `<div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>`}
+      ${u.oddzial ? `<div class="hero-avatar troop-av"><span>${d.name[0]}</span><img src="${tokenUrl(u)}" alt="" onerror="this.remove()"></div>` : `<div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>`}
       <div class="hero-name">${d.name}${u.poz ? ` <small class="hero-poz">poz. ${u.poz}</small>` : ''}</div>
       <div class="hero-role">${dead ? (u.oddzial ? 'Rozbici' : FALLEN[u.type]) : d.role}</div>
       <div class="hp">
@@ -261,7 +261,7 @@ export function renderTroops(wojsko, wybrane, limit, onZmiana) {
   box.innerHTML = `<h3 class="team-troops-t">Oddziały <small>${wybrane.length} / ${limit} miejsc</small></h3>
     ${typy.length ? '' : '<p class="team-troops-pusto">Nie masz jeszcze wojska. Szkolisz je w Hali Wojów.</p>'}
     <div class="team-troops-l">${typy.map((t) => { const d = ODDZIALY[t]; return `<div class="troop-pick">
-      <div class="troop-av" style="--img:url(assets/img/oddzialy/${t}-zeton.webp)"><span>${d.name[0]}</span></div>
+      <div class="troop-av"><span>${d.name[0]}</span><img src="assets/img/oddzialy/${t}-zeton.webp" alt="" onerror="this.remove()"></div>
       <div class="troop-txt"><b>${d.name}</b><small>Życie ${d.hp} · Atak ${d.atk}${d.range > 1 ? ` · zasięg ${d.range}` : ''} · masz ${wojsko[t]}</small></div>
       <div class="troop-ile"><button class="btn btn-small" data-minus="${t}" ${ile(t) ? '' : 'disabled'}>−</button><b>${ile(t)}</b>
       <button class="btn btn-small" data-plus="${t}" ${ile(t) < wojsko[t] && wybrane.length < limit ? '' : 'disabled'}>+</button></div></div>`; }).join('')}</div>

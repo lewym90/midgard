@@ -25,6 +25,12 @@ SPRAWDZ = """(() => {
     const r = sv.getBoundingClientRect(), p = sv.parentElement.getBoundingClientRect();
     if (r.width > p.width + 2 || r.height > p.height + 2) out.push(`znak SVG większy niż pojemnik (${Math.round(r.width)}×${Math.round(r.height)} w ${Math.round(p.width)}×${Math.round(p.height)})`);
   }
+  // małe ikony w tekście i przyciskach nie mogą się rozjechać (np. przez za szeroki selektor CSS)
+  for (const im of document.querySelectorAll('.ik-mini, .btn-ik img, .o-xp-w img, .o-k img, .o-chip img')) {
+    if (!widoczny(im)) continue;
+    const r = im.getBoundingClientRect();
+    if (r.width > 48 || r.height > 48) out.push(`ikona ${im.getAttribute('src').split('/').pop()} za duża (${Math.round(r.width)}×${Math.round(r.height)})`);
+  }
   for (const el of document.querySelectorAll('.overlay:not([hidden]) .mapa-ramka, .overlay:not([hidden]) .sheet')) { const r = el.getBoundingClientRect(); if (r.right > vw + 2 || r.left < -2 || r.bottom > vh + 2 || r.top < -2) out.push(`okno ${el.className.split(' ')[0]} wychodzi poza ekran`); }
   for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-plak, .o-med, .o-herb, .o-sheet, .stat, .coin, .o-chip, .troop-pick')) {
     if (!widoczny(el)) continue;
