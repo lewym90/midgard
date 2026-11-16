@@ -23,7 +23,7 @@ SPRAWDZ = """(() => {
     const r = sv.getBoundingClientRect(), p = sv.parentElement.getBoundingClientRect();
     if (r.width > p.width + 2 || r.height > p.height + 2) out.push(`znak SVG większy niż pojemnik (${Math.round(r.width)}×${Math.round(r.height)} w ${Math.round(p.width)}×${Math.round(p.height)})`);
   }
-  for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-zas, .o-sheet')) {
+  for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-plak, .o-med, .o-herb, .o-sheet')) {
     if (!widoczny(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.right > vw + 2 || r.left < -2) out.push(`${el.className || el.tagName} wychodzi poza ekran w poziomie (${Math.round(r.left)}–${Math.round(r.right)} przy ${vw})`);
@@ -42,9 +42,9 @@ SPRAWDZ = """(() => {
     if (r.bottom > p.bottom + 2 && getComputedStyle(c.parentElement).overflowY !== 'auto') out.push('karta bohatera ucięta');
   }
   // teksty nie wychodzą poza swoje karty i panele
-  for (const t of ekran.querySelectorAll('.hero-name, .hp-num, .pick-name, .o-zas b, .intent-text, .btn')) {
+  for (const t of ekran.querySelectorAll('.hero-name, .hp-num, .pick-name, .o-plak-in b, .intent-text, .btn')) {
     if (!widoczny(t)) continue;
-    const box = t.closest('.hero-card, .pick, .o-zas, .intent, .panel, .sheet') ;
+    const box = t.closest('.hero-card, .pick, .o-plak, .intent, .panel, .sheet') ;
     if (!box || box === t) continue;
     const r = t.getBoundingClientRect(), p = box.getBoundingClientRect();
     if (r.right > p.right + 1 || r.left < p.left - 1) out.push(`tekst „${(t.textContent || '').trim().slice(0, 20)}” wychodzi poza ${box.className.split(' ')[0]}`);

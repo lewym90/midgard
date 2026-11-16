@@ -69,19 +69,28 @@
 
   <!-- OSADA -->
   <section id="screen-osada" class="screen">
-    <header class="o-top">
-      <button class="icon-btn" id="o-wroc" aria-label="Menu główne"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="o-mapa" id="o-mapa"><canvas id="o-canvas"></canvas></div>
+    <div class="o-vinieta"></div>
+    <header class="o-hud-top" id="o-hud-top">
+      <button class="o-herb" id="o-wroc" aria-label="Menu główne">
+        <img src="assets/img/ui/herb.webp" alt=""><img class="o-herb-znak" src="assets/img/ikony/ikona-180.png" alt="">
+        <span class="o-herb-poz" id="o-herb-poz">1</span>
+      </button>
+      <div class="o-gracz">
+        <div class="o-nick" id="o-nick"></div>
+        <div class="o-staty" id="o-staty"></div>
+      </div>
       <div class="o-res" id="o-res"></div>
     </header>
-    <div class="o-mapa" id="o-mapa"><canvas id="o-canvas"></canvas>
-      <div class="o-podp" id="o-podp" hidden></div>
-    </div>
-    <footer class="o-dol">
-      <button class="btn" id="o-zbierz">Zbierz wszystko</button>
-      <button class="btn btn-gold" id="o-wyprawa">Wyprawa</button>
-    </footer>
-    <div class="o-sheet iron" id="o-sheet" hidden>
-      <button class="icon-btn o-x" id="o-sheet-zamknij" aria-label="Zamknij"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="o-podp" id="o-podp" hidden></div>
+    <nav class="o-hud-dol" id="o-hud-dol">
+      <button class="o-med" id="o-zbierz"><span class="o-med-k"><img src="assets/img/ui/ak-zbierz.webp" alt=""></span><span class="o-med-t">Zbierz</span></button>
+      <button class="o-med" id="o-bohaterowie"><span class="o-med-k"><img src="assets/img/ui/ak-bohaterowie.webp" alt=""></span><span class="o-med-t">Bohaterowie</span></button>
+      <button class="o-med" id="o-budowa"><span class="o-med-k"><img src="assets/img/ui/ak-budowa.webp" alt=""></span><span class="o-med-t">Budowa</span></button>
+      <button class="o-med o-med-duzy" id="o-wyprawa"><span class="o-med-k"><img src="assets/img/ui/ak-wyprawa.webp" alt=""></span><span class="o-med-t">Wyprawa</span></button>
+    </nav>
+    <div class="o-sheet rama" id="o-sheet" hidden>
+      <button class="o-x" id="o-sheet-zamknij" aria-label="Zamknij"></button>
       <div id="o-sheet-body"></div>
     </div>
   </section>

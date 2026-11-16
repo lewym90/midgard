@@ -1,10 +1,11 @@
 // Midgard — praca bez internetu. Kod: najpierw sieć (szybkie aktualizacje), grafiki i czcionki: najpierw pamięć.
-const CACHE = 'midgard-v0.5.1';
+const CACHE = 'midgard-v0.6.0';
 const AUDIO_CACHE = 'midgard-audio-v1'; // osobno, żeby muzyka nie pobierała się od nowa przy każdej wersji
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/osada.js', 'serwer/osada-dane.js', 'js/konto.js', 'js/konto-ui.js', 'js/engine.js', 'js/board.js', 'js/ui.js', 'js/data.js', 'js/hex.js', 'js/runes.js', 'js/audio.js',
   'assets/img/osada/teren.webp',
+  ...['plakietka.png', 'rama-okno.png', 'pasek.png', 'medalion.webp', 'medalion-maly.webp', 'herb.webp', 'tarcza.webp', 'wstega.webp', 'zamknij.webp', 'ak-wyprawa.webp', 'ak-budowa.webp', 'ak-bohaterowie.webp', 'ak-zbierz.webp'].map((f) => 'assets/img/ui/' + f),
   'assets/img/tlo/key-art.webp', 'assets/img/tlo/stol.webp', 'assets/img/marka/logo.webp',
   'assets/img/teren/snieg.webp', 'assets/img/teren/las.webp', 'assets/img/teren/lod.webp', 'assets/img/teren/bagno.webp', 'assets/img/teren/skaly.webp', 'assets/img/teren/kurhan.webp',
   'assets/img/material/dab.webp', 'assets/img/material/zelazo.webp', 'assets/img/material/kosc.webp', 'assets/img/material/pergamin.webp', 'assets/img/material/zloto.webp',
