@@ -8,9 +8,9 @@ import { key, distance } from './hex.js';
 import { audio } from './audio.js';
 import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
-import { osada } from './osada.js';
+import { osada, opisRaportu } from './osada.js';
 
-const VERSION = '0.8.1';
+const VERSION = '0.9.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -53,6 +53,7 @@ function loadImages() {
     ...Object.fromEntries(HERO_ORDER.map((k) => ['zeton-' + k, `bohaterowie/${k}-zeton`])),
     ...Object.fromEntries(ODDZIALY_ORDER.map((k) => ['zeton-' + k, `oddzialy/${k}-zeton`])),
     'zeton-draugr': 'wrogowie/draugr-zeton', 'zeton-lucznik': 'wrogowie/lucznik-zeton', 'zeton-pan-kurhanu': 'wrogowie/pan-kurhanu-zeton',
+    ...Object.fromEntries(['dlugi_dom', 'brama', 'wieza', 'kamien', 'palisada'].map((k) => ['bud-' + k, `osada/${k}`])),
   };
   const out = {};
   return Promise.all(Object.entries(list).map(([k, p]) => new Promise((res) => {
@@ -400,14 +401,36 @@ function showEnd() {
   const alive = E.livingChampions(state).length;
   const oddz = state.units.filter((u) => u.oddzial);
   const oddzTxt = oddz.length ? ` Wróciło ${oddz.filter((u) => u.hp > 0).length} z ${oddz.length} oddziałów.` : '';
-  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów.${oddzTxt} Poziom: ${E.level(state).name}.</p><p class="stats" id="end-lup">${state.wyprawa ? 'Liczę łup…' : konto.zalogowany ? 'Ta bitwa nie była wyprawą z osady, więc nie daje łupu.' : ''}</p><div class="end-druzyna" id="end-druzyna"></div>`;
+  const S = E.scen(state);
+  const tekst = win ? S.win : state.powod === 'dom' ? S.loseHall : alive && S.loseTime ? S.loseTime : S.lose;
+  const z = state.wyprawa || state.obrona;
+  $('end-text').innerHTML = `<p>${tekst}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów.${oddzTxt} ${S.winOnTime ? 'Fala' : 'Poziom'}: ${E.level(state).name}.</p><p class="stats" id="end-lup">${z ? (state.obrona ? 'Liczę skutki najazdu…' : 'Liczę łup…') : konto.zalogowany ? 'Ta bitwa nie była wyprawą z osady, więc nie daje łupu.' : ''}</p><div class="end-druzyna" id="end-druzyna"></div>`;
   $('btn-end-menu').textContent = konto.zalogowany ? 'Wróć do osady' : 'Menu główne';
   overlay('ov-end');
   const wyprawa = state.wyprawa;
-  const polegli = state.units.filter((u) => u.side === 'hero' && !u.oddzial && u.hp <= 0).map((u) => u.type);
+  const polegli = state.units.filter((u) => u.side === 'hero' && !u.oddzial && !u.budowla && u.hp <= 0).map((u) => u.type);
   const ocaleli = oddz.filter((u) => u.hp > 0).map((u) => u.type);
   store.clear();
   if (wyprawa) rozliczWyprawe(wyprawa, state.result, polegli, ocaleli);
+  if (state.obrona) rozliczObrone(state.obrona, state.result, polegli, ocaleli);
+}
+
+function wierszeDruzyny(d) {
+  const wiersze = d.bohaterowie.map((b) => `<div class="end-boh"><img src="assets/img/bohaterowie/${b.typ}-zeton.webp" alt=""><span><b>${HEROES[b.typ].name}</b> <img class="ik-mini" src="assets/img/osada/ik-doswiadczenie.webp" alt="">+${b.xp} doświadczenia${b.awans ? ` · <em>awans na poziom ${b.poz}!</em>` : ''}${b.valhalla ? ` · <img class="ik-mini" src="assets/img/osada/ik-valhalla.webp" alt="">w Valhalli do ${godz(b.valhalla)}` : ''}</span></div>`);
+  const st = Object.entries(d.straty || {});
+  if (st.length) wiersze.push(`<div class="end-boh end-straty"><img class="ik-mini" src="assets/img/osada/ik-wojsko.webp" alt="">Polegli z wojska: ${st.map(([t, n]) => `${ODDZIALY[t].name} ×${n}`).join(', ')}</div>`);
+  return wiersze.join('');
+}
+
+async function rozliczObrone(id, wynik, polegli, ocaleli) {
+  const el = () => $('end-lup');
+  try {
+    const r = await konto.api('POST', '/osada/obrona/koniec', { id, wynik, polegli, ocaleli });
+    if (r.druzyna && $('end-druzyna')) $('end-druzyna').innerHTML = wierszeDruzyny(r.druzyna);
+    if (el()) el().textContent = opisRaportu(r.raport);
+    osada.oznaczRaport && osada.oznaczRaport(r.raport.nr);
+    osada._przyjmij && osada._przyjmij(r);
+  } catch (e) { if (el()) el().textContent = e.message; }
 }
 
 const godz = (ms) => new Date(ms).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
@@ -415,12 +438,7 @@ async function rozliczWyprawe(id, wynik, polegli = [], ocaleli = []) {
   const el = () => $('end-lup');
   try {
     const r = await konto.api('POST', '/osada/wyprawa/koniec', { id, wynik, polegli, ocaleli });
-    if (r.druzyna && $('end-druzyna')) {
-      const wiersze = r.druzyna.bohaterowie.map((b) => `<div class="end-boh"><img src="assets/img/bohaterowie/${b.typ}-zeton.webp" alt=""><span><b>${HEROES[b.typ].name}</b> <img class="ik-mini" src="assets/img/osada/ik-doswiadczenie.webp" alt="">+${b.xp} doświadczenia${b.awans ? ` · <em>awans na poziom ${b.poz}!</em>` : ''}${b.valhalla ? ` · <img class="ik-mini" src="assets/img/osada/ik-valhalla.webp" alt="">w Valhalli do ${godz(b.valhalla)}` : ''}</span></div>`);
-      const st = Object.entries(r.druzyna.straty || {});
-      if (st.length) wiersze.push(`<div class="end-boh end-straty"><img class="ik-mini" src="assets/img/osada/ik-wojsko.webp" alt="">Polegli z wojska: ${st.map(([t, n]) => `${ODDZIALY[t].name} ×${n}`).join(', ')}</div>`);
-      $('end-druzyna').innerHTML = wiersze.join('');
-    }
+    if (r.druzyna && $('end-druzyna')) $('end-druzyna').innerHTML = wierszeDruzyny(r.druzyna);
     const d = r.lup.dodane, st = r.lup.stracone;
     const czesci = Object.keys(NAZWY_SUR).filter((k) => d[k]).map((k) => `${NAZWY_SUR[k]} +${d[k]}`);
     const przep = Object.keys(NAZWY_SUR).filter((k) => st[k] > 0).map((k) => `${NAZWY_SUR[k]} ${st[k]}`);
@@ -474,16 +492,21 @@ function openTeam() {
       if (z > 0) pick.oddzialy.push(t);
       else { const i = pick.oddzialy.lastIndexOf(t); if (i >= 0) pick.oddzialy.splice(i, 1); }
       draw();
-    });
+    }, pick.tryb === 'obrona');
     else $('team-troops').hidden = true;
-    UI.renderLevels(pick.level, (l) => { pick.level = l; draw(); });
+    const obrona = pick.tryb === 'obrona' && o;
+    $('levels').hidden = !!obrona;
+    if (obrona) $('level-desc').textContent = `Najazd: ${O.NAZWY_FAL[O.poziomFali(o)]}. Bronicie Długiego Domu za palisadą${O.umocnienia(o).wieze.length ? ', wieże strzelają' : ''}. Wygrywacie, gdy przetrwacie 8 rund.`;
+    else UI.renderLevels(pick.level, (l) => { pick.level = l; draw(); });
     const go = $('btn-team-go');
     go.disabled = pick.team.length !== 3;
     go.textContent = pick.team.length === 3 ? 'Dalej' : wolni < 3 ? 'Za mało bohaterów' : `Wybierz jeszcze ${3 - pick.team.length}`;
   };
-  $('team-sub').textContent = status
-    ? `Trzech bohaterów z twojej osady${O.miejscaWBitwie(o) ? ' i oddziały z Hali Wojów' : ''}. Polegli odpoczywają potem w Valhalli.`
-    : 'Trzech bohaterów. Każdy łamie inną regułę, a bitwę wygrywa się tylko razem.';
+  $('team-sub').textContent = pick.tryb === 'obrona' && status
+    ? `Kto stanie na palisadzie? Trzech bohaterów${O.miejscaWBitwie(o) ? ' i oddziały z Hali Wojów' : ''}.`
+    : status
+      ? `Trzech bohaterów z twojej osady${O.miejscaWBitwie(o) ? ' i oddziały z Hali Wojów' : ''}. Polegli odpoczywają potem w Valhalli.`
+      : 'Trzech bohaterów. Każdy łamie inną regułę, a bitwę wygrywa się tylko razem.';
   draw();
   show('screen-team');
 }
@@ -491,8 +514,16 @@ function openTeam() {
 async function newBattle() {
   store.clear();
   // wyprawa z osady: premie z budynków i łup po bitwie
-  let wyprawa = null, premie = null, opcje = null;
-  if (konto.zalogowany && pick.zOsady) {
+  let wyprawa = null, obronaId = null, premie = null, opcje = null, poziom = pick.level;
+  if (konto.zalogowany && pick.zOsady && pick.tryb === 'obrona') {
+    // obrona osady: bez połączenia nie ma bitwy (wynik rozstrzyga serwer)
+    try {
+      const r = await konto.api('POST', '/osada/obrona/start', { druzyna: pick.team, oddzialy: pick.oddzialy || [] });
+      obronaId = r.walka; premie = r.premie; poziom = r.fala;
+      opcje = { rozwoj: r.rozwoj || {}, oddzialy: r.oddzialy || [], scenariusz: 'obrona', obrona: r.obrona };
+      if (r.osada) osada._przyjmij(r);
+    } catch (e) { KUI.toast(e.message); return; }
+  } else if (konto.zalogowany && pick.zOsady) {
     try {
       const r = await konto.api('POST', '/osada/wyprawa/start', { poziom: pick.level, druzyna: pick.team, oddzialy: pick.oddzialy || [] });
       wyprawa = r.wyprawa; premie = r.premie; opcje = { rozwoj: r.rozwoj || {}, oddzialy: r.oddzialy || [] };
@@ -502,15 +533,18 @@ async function newBattle() {
       KUI.toast('Brak połączenia z osadą: ta bitwa nie da łupu.');
     }
   }
-  state = E.newBattle(undefined, pick.team, pick.level, premie, opcje);
+  state = E.newBattle(undefined, pick.team, poziom, premie, opcje);
   state.wyprawa = wyprawa;
+  state.obrona = obronaId;
   const pl = premie ? Object.entries(premie).filter(([, n]) => n > 0).map(([k, n]) => NAZWY_PREMII[k](n)) : [];
   view = E.clone(state);
   undo = [];
   Object.assign(sel, { heroId: null, dieId: null, mode: null, hlUnit: null });
-  $('intro-text').innerHTML = SCENARIO.intro.map((p) => `<p>${p}</p>`).join('');
+  const S = E.scen(state);
+  document.querySelector('#ov-intro .sheet-title').textContent = S.title;
+  $('intro-text').innerHTML = S.intro.map((p) => `<p>${p}</p>`).join('');
   const no = state.units.filter((u) => u.oddzial).length;
-  $('intro-goal').textContent = SCENARIO.goal + (pl.length ? ` Premie z osady: ${pl.join(', ')}.` : '') + (no ? ` Kurhan czuje ${no === 1 ? 'twój oddział' : 'twoje oddziały'}: ${no} ${no === 1 ? 'trup więcej' : no < 5 ? 'trupy więcej' : 'trupów więcej'}.` : '');
+  $('intro-goal').textContent = S.goal + (pl.length ? ` Premie z osady: ${pl.join(', ')}.` : '') + (no && S.troopWaves ? ` Kurhan czuje ${no === 1 ? 'twój oddział' : 'twoje oddziały'}: ${no} ${no === 1 ? 'trup więcej' : no < 5 ? 'trupy więcej' : 'trupów więcej'}.` : '');
   show('screen-battle');
   render();
   overlay('ov-intro');
@@ -611,14 +645,18 @@ async function boot() {
   };
   $('m-music').onclick = () => { audio.setPref('music', !audio.prefs.music); refreshSound(); };
   $('m-sfx').onclick = () => { audio.setPref('sfx', !audio.prefs.sfx); refreshSound(); };
-  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; pick.zOsady = false; openTeam(); };
+  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; pick.zOsady = false; pick.tryb = null; openTeam(); };
   $('btn-team-back').onclick = () => show(pick.zOsady ? 'screen-osada' : 'screen-start');
   $('btn-osada').onclick = () => { audio.unlock(); show('screen-osada'); };
   osada.init(async () => {
     audio.unlock();
     if (store.load() && !(await confirmBox('Nowa wyprawa?', 'Masz niedokończoną bitwę. Zostanie utracona.'))) return;
-    pick.zOsady = true; openTeam();
-  }, () => { refreshStart(); show('screen-start'); });
+    pick.zOsady = true; pick.tryb = 'wyprawa'; openTeam();
+  }, () => { refreshStart(); show('screen-start'); }, async () => {
+    audio.unlock();
+    if (store.load() && !(await confirmBox('Wyjść naprzeciw fali?', 'Masz niedokończoną bitwę. Zostanie utracona.'))) return;
+    pick.zOsady = true; pick.tryb = 'obrona'; openTeam();
+  });
   $('btn-team-go').onclick = () => { if (pick.team.length === 3) newBattle(); };
   $('btn-continue').onclick = () => { audio.unlock(); continueBattle(); };
   $('btn-rules').onclick = () => overlay('ov-rules');
@@ -631,7 +669,7 @@ async function boot() {
   $('btn-menu').onclick = () => overlay('ov-menu');
   $('m-resume').onclick = () => overlay('ov-menu', false);
   $('m-rules').onclick = () => { overlay('ov-menu', false); overlay('ov-rules'); };
-  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); pick.level = state.level; newBattle(); } };
+  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); if (!state.obrona) pick.level = state.level; newBattle(); } };
   $('m-exit').onclick = () => { overlay('ov-menu', false); store.save(); refreshStart(); show(domEkran()); };
   $('btn-end-again').onclick = () => { overlay('ov-end', false); openTeam(); };
   $('btn-end-menu').onclick = () => { overlay('ov-end', false); refreshStart(); show(domEkran()); };

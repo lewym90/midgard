@@ -1,7 +1,7 @@
 // Zasady bitwy. Czysta logika bez DOM, żeby dało się ją testować.
 // Każda akcja zmienia stan i zwraca listę zdarzeń do animacji.
 
-import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO, ODDZIALY, jednostka } from './data.js';
+import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO, SCENARIOS, ODDZIALY, BUDOWLE, jednostka } from './data.js';
 import { key, parseKey, distance, neighbors } from './hex.js';
 
 export const SAVE_VERSION = 2;
@@ -26,7 +26,7 @@ export const unitAt = (s, c, r) => s.units.find((u) => u.hp > 0 && u.c === c && 
 export const unitById = (s, id) => s.units.find((u) => u.id === id);
 export const livingHeroes = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0);
 // Bohaterowie bez oddziałów: od nich zależą runy i koniec bitwy.
-export const livingChampions = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0 && !u.oddzial);
+export const livingChampions = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0 && !u.oddzial && !u.budowla);
 export const livingEnemies = (s) => s.units.filter((u) => u.side === 'enemy' && u.hp > 0);
 export const nb = (s, c, r) => neighbors(c, r, cols(s), rows(s));
 
@@ -34,12 +34,22 @@ export function unitDef(u) { return u.side === 'hero' ? jednostka(u.type) : ENEM
 
 // ---------- tworzenie bitwy ----------
 
-export const level = (s) => SCENARIO.levels[s.level];
+export const scen = (s) => SCENARIOS[s.scenario] || SCENARIO;
+export const level = (s) => scen(s).levels[s.level] || Object.values(scen(s).levels)[0];
+
+// Mapa obrony: kolumna palisady zależy od liczby odcinków w osadzie (2 odcinki = 1 pole wału).
+function mapaObrony(S, ob) {
+  const wal = new Set(S.wallOrder.slice(0, Math.min(S.wallOrder.length, Math.ceil((ob.palisada || 0) / 2))));
+  return S.map.map((row, r) => row.replace('|', wal.has(r) ? 'P' : '.'));
+}
 
 // opcje: { rozwoj: { typ: { poz, zycie, atak } }, oddzialy: ['woje', ...] } — z osady, dla wypraw
+//         { scenariusz: 'obrona', obrona: { dd, brama, wieze: [poziomy], kamien, palisada: liczba odcinków } } — obrona osady
 export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec', premie = null, opcje = null) {
   const P = { zycie: 0, atak: 0, hamingja: 0, runy: 0, ...(premie || {}) };
   const rozwoj = (opcje && opcje.rozwoj) || {};
+  const S = SCENARIOS[(opcje && opcje.scenariusz) || 'kurhan'] || SCENARIO;
+  const ob = S.id === 'obrona' ? { dd: 1, brama: 0, wieze: [], kamien: 0, palisada: 0, ...((opcje && opcje.obrona) || {}) } : null;
   const s = {
     level: lvl,
     team: team.slice(),
@@ -48,9 +58,9 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
     wyprawa: null,
     wards: [],
     v: SAVE_VERSION,
-    scenario: SCENARIO.id,
+    scenario: S.id,
     seed,
-    map: SCENARIO.map.slice(),
+    map: ob ? mapaObrony(S, ob) : S.map.slice(),
     round: 0,
     phase: 'start',
     result: null,
@@ -75,13 +85,27 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
     if (d.oddzial) u.oddzial = true;
     s.units.push(u);
   };
-  team.forEach((type, i) => nowa(type, SCENARIO.heroSlots[i], HEROES[type], rozwoj[type] || {}));
-  const odd = ((opcje && opcje.oddzialy) || []).filter((t) => ODDZIALY[t]).slice(0, SCENARIO.troopSlots.length);
-  odd.forEach((type, i) => nowa(type, SCENARIO.troopSlots[i], ODDZIALY[type]));
-  if (odd.length) {
+  team.forEach((type, i) => nowa(type, S.heroSlots[i], HEROES[type], rozwoj[type] || {}));
+  const odd = ((opcje && opcje.oddzialy) || []).filter((t) => ODDZIALY[t]).slice(0, S.troopSlots.length);
+  odd.forEach((type, i) => nowa(type, S.troopSlots[i], ODDZIALY[type]));
+  if (odd.length && S.troopWaves) {
     s.extraWaves = {};
-    odd.forEach((_, i) => { const [r, type, at] = SCENARIO.troopWaves[i]; (s.extraWaves[r] = s.extraWaves[r] || []).push({ type, at }); });
-    s.bossBonus = SCENARIO.troopBossHp * odd.length;
+    odd.forEach((_, i) => { const [r, type, at] = S.troopWaves[i]; (s.extraWaves[r] = s.extraWaves[r] || []).push({ type, at }); });
+    s.bossBonus = S.troopBossHp * odd.length;
+  }
+  if (ob) {
+    // budowle: życie z poziomu, bez premii Hali Wojów
+    const bud = (type, at, hp, extra = {}) => {
+      const d = BUDOWLE[type];
+      s.units.push({ id: s.nextId++, side: 'hero', type, c: at[0], r: at[1], hp, maxHp: hp, moveLeft: 0, attacked: false,
+        runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false, bonusAtk: 0, budowla: true, ...extra });
+      return d;
+    };
+    bud('dlugi-dom', S.structureSlots['dlugi-dom'], 20 + 5 * Math.max(1, ob.dd), { poz: ob.dd });
+    if (ob.brama > 0) bud('brama', [S.wallCol, S.gateRow], 10 + 5 * ob.brama, { poz: ob.brama });
+    if (ob.kamien > 0) bud('kamien', S.structureSlots.kamien, 12 + 2 * ob.kamien, { poz: ob.kamien, aura: ob.kamien >= 6 ? 2 : 1 });
+    (ob.wieze || []).filter((p) => p > 0).sort((a, b) => b - a).slice(0, S.structureSlots.wieza.length)
+      .forEach((p, i) => bud('wieza', S.structureSlots.wieza[i], 8 + 2 * p, { poz: p, stalyAtak: Math.floor(p / 3) }));
   }
   return s;
 }
@@ -93,6 +117,7 @@ export const wardAt = (s, c, r) => (s.wards || []).some((w) => w.c === c && w.r 
 function enterCost(s, c, r, u = null) {
   const t = terrainAt(s, c, r);
   if (t.blocked || wardAt(s, c, r)) return Infinity;
+  if (t.wal && (!u || u.side === 'enemy')) return Infinity; // wał: trupy nie przejdą (pole AI liczone jak dla trupów)
   if (u && u.type === 'mistrz-run') return 1;
   return t.cost;
 }
@@ -185,7 +210,9 @@ export function heroDamage(s, target, base) {
   }
   const pancerz = jednostka(target.type).pancerz || 0;
   if (pancerz) parts.push(`pancerz −${pancerz}`);
-  const dmg = Math.max(1, base - wall - t.def - shieldmaid - pancerz);
+  const kamien = livingHeroes(s).filter((k) => k.type === 'kamien' && distance(k.c, k.r, target.c, target.r) <= 2).reduce((m, k) => Math.max(m, k.aura || 1), 0);
+  if (kamien) parts.push(`kamień runiczny −${kamien}`);
+  const dmg = Math.max(1, base - wall - t.def - shieldmaid - pancerz - kamien);
   return { dmg, parts };
 }
 
@@ -218,7 +245,9 @@ export function assignRune(s, dieId, heroId, face) {
   if (!die || die.used || !h || h.hp <= 0 || h.side !== 'hero') return null;
   const f = die.face === 'N' ? face : die.face;
   if (!f || f === 'N') return null;
-  if (f === 'K' && h.oddzial) return null; // oddziały nie mają mocy
+  if (f === 'K' && (h.oddzial || h.budowla)) return null; // oddziały i budowle nie mają mocy
+  if (f === 'R' && h.budowla) return null; // budowle się nie ruszają
+  if (f === 'T' && h.budowla && !jednostka(h.type).atk) return null; // brama, kamień i Długi Dom nie atakują
   die.used = true; die.assignedTo = heroId; die.as = f;
   const ev = [{ type: 'rune', heroId, face: f }];
   if (f === 'R') h.moveLeft += 2;
@@ -253,6 +282,7 @@ export function moveHero(s, heroId, c, r) {
 
 export function attackTargets(s, h) {
   if (h.hp <= 0 || h.attacked || s.phase !== 'narada') return [];
+  if (h.budowla && !jednostka(h.type).atk) return []; // brama, kamień i Długi Dom nie walczą
   const rg = rangeOf(s, h);
   return livingEnemies(s).filter((e) => distance(h.c, h.r, e.c, e.r) <= rg);
 }
@@ -326,7 +356,7 @@ export function usePower(s, heroId, targetId = null) {
       if (x.id === h.id) continue;
       const before = x.hp;
       x.hp = Math.min(x.maxHp, x.hp + 2);
-      x.moveLeft += 1;
+      if (!x.budowla) x.moveLeft += 1;
       if (x.hp > before) ev.push({ type: 'heal', id: x.id, amount: x.hp - before, hp: x.hp });
     }
   } else if (h.type === 'jarl') {
@@ -427,7 +457,7 @@ export function planIntents(s) {
 
 function barrowHex(s) {
   for (let r = 0; r < rows(s); r++) for (let c = 0; c < cols(s); c++) if (s.map[r][c] === 'K') return [c, r];
-  return null;
+  return scen(s).spawnOrigin || null;
 }
 
 function freeNearBarrow(s, reserved = new Set(), prefer = null) {
@@ -489,9 +519,9 @@ export function upcomingWaves(s, ahead = 2) {
 // Ilu trupów jeszcze nie wyszło z kurhanu (bez Pana Kurhanu).
 export function remainingInBarrow(s) {
   let n = 0;
-  for (let r = s.round + 1; r <= SCENARIO.maxRounds; r++) n += wavesFor(s, r).filter((w) => w.type !== 'pan-kurhanu').length;
+  for (let r = s.round + 1; r <= scen(s).maxRounds; r++) n += wavesFor(s, r).filter((w) => w.type !== 'pan-kurhanu').length;
   const boss = s.units.find((u) => u.type === 'pan-kurhanu');
-  if (!boss || boss.hp > 0) n += level(s).summons - s.summoned;
+  if (!boss || boss.hp > 0) n += (level(s).summons || 0) - s.summoned;
   return n;
 }
 
@@ -500,8 +530,28 @@ export function bossAwakeAt(s) {
   return null;
 }
 
+function wygrana(s, ev) {
+  s.result = 'win'; s.phase = 'koniec';
+  for (const e of livingEnemies(s)) { e.hp = 0; ev.push({ type: 'death', id: e.id, crumble: true }); }
+  ev.push({ type: 'end', result: 'win' });
+}
+
 function checkEnd(s, ev) {
   if (s.result) return;
+  if (scen(s).winOnTime) {
+    // obrona: przegrana, gdy padnie Długi Dom albo wszyscy bohaterowie; wygrana, gdy nie ma już trupów ani fal
+    const dom = s.units.find((u) => u.type === 'dlugi-dom');
+    if (dom && dom.hp <= 0) {
+      s.result = 'lose'; s.phase = 'koniec'; s.powod = 'dom';
+      for (const u of livingHeroes(s)) u.uciekl = true;
+      ev.push({ type: 'end', result: 'lose' });
+    } else if (!livingChampions(s).length) {
+      s.result = 'lose'; s.phase = 'koniec';
+      for (const u of livingHeroes(s)) u.uciekl = true;
+      ev.push({ type: 'end', result: 'lose' });
+    } else if (s.round >= 1 && !livingEnemies(s).length && remainingInBarrow(s) === 0) wygrana(s, ev);
+    return;
+  }
   const boss = s.units.find((u) => u.type === 'pan-kurhanu');
   if (boss && boss.hp <= 0) {
     s.result = 'win'; s.phase = 'koniec';
@@ -569,20 +619,22 @@ export function resolveEnemyTurn(s) {
 
 function endOfRound(s, ev) {
   // mróz
-  if (s.round >= SCENARIO.frostStart) {
-    s.frost = Math.min(cols(s), s.round - SCENARIO.frostStart + 1);
+  const S = scen(s);
+  if (s.round >= S.frostStart) {
+    s.frost = Math.min(cols(s), s.round - S.frostStart + 1);
     ev.push({ type: 'frost', frost: s.frost });
     for (const h of livingHeroes(s)) {
       if (isFrozen(s, h.c)) {
-        h.hp = Math.max(0, h.hp - SCENARIO.frostDamage);
-        ev.push({ type: 'hit', from: null, to: h.id, dmg: SCENARIO.frostDamage, absorbed: 0, hp: h.hp, frost: true });
+        h.hp = Math.max(0, h.hp - S.frostDamage);
+        ev.push({ type: 'hit', from: null, to: h.id, dmg: S.frostDamage, absorbed: 0, hp: h.hp, frost: true });
         if (h.hp <= 0) ev.push({ type: 'death', id: h.id });
       }
     }
     checkEnd(s, ev);
     if (s.result) return;
   }
-  if (s.round >= SCENARIO.maxRounds) {
+  if (s.round >= S.maxRounds) {
+    if (S.winOnTime) { wygrana(s, ev); return; } // obrona: świt, osada przetrwała
     s.result = 'lose'; s.phase = 'koniec';
     ev.push({ type: 'end', result: 'lose', reason: 'czas' });
     return;

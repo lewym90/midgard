@@ -619,3 +619,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .o-xp-w { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.15rem; }
 .o-xp-w img { width: 1.15rem; height: 1.15rem; object-fit: contain; flex: none; }
 .o-xp-w .o-xp { flex: 1; margin-top: 0; }
+
+/* ---------- obrona osady (0.9.0) ---------- */
+button.o-chip { font-family: inherit; cursor: pointer; }
+.o-chip.najazd img { border-radius: 50%; box-shadow: 0 0 0 1px #6b1d14; }
+.o-chip.najazd.blisko { border-color: #d64a3c; color: #ffd2c8; animation: najazdPuls 1.6s ease-in-out infinite; }
+@keyframes najazdPuls { 50% { box-shadow: 0 0 0.7rem rgba(214,74,60,0.75); } }
+.o-head > img.o-naj-ik { width: 4.2rem; height: 4.2rem; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px #8e2016, 0 0 0 3px #000; }
+.o-sily { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 0.6rem 0; }
+.o-sila { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; padding: 0.6rem; border-radius: 0.5rem; background: rgba(255,240,210,0.05); border: 1px solid rgba(212,166,74,0.35); text-align: center; }
+.o-sila span { font-family: var(--display); font-size: 0.82rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+.o-sila b { font-family: var(--display); font-size: 1.9rem; color: var(--gold-hi); line-height: 1.1; }
+.o-sila small { font-size: 0.8rem; color: var(--ink-faint); }
+.o-sila.wrog { border-color: rgba(214,74,60,0.5); }
+.o-sila.wrog b { color: #ff9a86; }
+.o-ok { color: #a8d88a; }
+.o-raporty { display: flex; flex-direction: column; gap: 0.4rem; }
+.o-raport { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.6rem; border-radius: 0.4rem; border-left: 3px solid #a8d88a; background: rgba(255,240,210,0.04); font-size: 0.88rem; color: var(--ink-dim); }
+.o-raport.lose { border-left-color: #d64a3c; }
+.o-raport b { color: var(--ink); font-size: 0.85rem; }
+.hero-card.budowla .bud-av { background: none; box-shadow: none; display: grid; place-items: center; overflow: visible; }
+.hero-card.budowla .bud-av img { width: 3.2rem; height: 3.2rem; object-fit: contain; filter: drop-shadow(0 2px 3px #000); }
+.hero-card.budowla { border-color: rgba(125,138,150,0.45); }

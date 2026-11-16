@@ -79,20 +79,20 @@ export const BUDYNKI = {
     opis: 'Buduje drakkary. Zasięg wypraw na mapie Midgardu (działa od etapu wypraw).',
   },
   wieza: {
-    nazwa: 'Wieża łucznicza', grupa: 'wkrotce', limit: [0, 1, 2, 2, 3, 3, 4, 4, 5, 5], koszt: { drewno: 180, zelazo: 60 }, czas: 60,
-    opis: 'Strzela do trupów atakujących osadę (działa od etapu obrony osady).',
+    nazwa: 'Wieża łucznicza', grupa: 'obrona', limit: [0, 1, 2, 2, 3, 3, 4, 4, 5, 5], koszt: { drewno: 180, zelazo: 60 }, czas: 60,
+    opis: 'W obronie osady strzela na 3 pola (do 3 wież na polu bitwy, najwyższe poziomy). Życie 8 + 2 na poziom, atak rośnie co 3 poziomy.',
   },
   brama: {
-    nazwa: 'Brama', grupa: 'wkrotce', limit: [0, 1, 1, 1, 2, 2, 2, 2, 3, 3], koszt: { drewno: 150, zelazo: 80 }, czas: 60,
-    opis: 'Wejście w palisadzie (działa od etapu obrony osady).',
+    nazwa: 'Brama', grupa: 'obrona', limit: [0, 1, 1, 1, 2, 2, 2, 2, 3, 3], koszt: { drewno: 150, zelazo: 80 }, czas: 60,
+    opis: 'Zamyka przejście w palisadzie. Wasi przechodzą, trupy muszą ją rozbić. Liczy się najwyższa brama: życie 10 + 5 na poziom.',
   },
   palisada: {
-    nazwa: 'Palisada', grupa: 'wkrotce', limit: [0, 8, 12, 16, 20, 24, 28, 32, 36, 40], koszt: { drewno: 25 }, czas: 5,
-    opis: 'Odcinek muru z zaostrzonych pali (działa od etapu obrony osady).',
+    nazwa: 'Palisada', grupa: 'obrona', limit: [0, 8, 12, 16, 20, 24, 28, 32, 36, 40], koszt: { drewno: 25 }, czas: 5,
+    opis: 'Odcinek muru z zaostrzonych pali. W obronie osady każde 2 odcinki to jedno pole wału (najwyżej 6): trupy przez nie nie przejdą, a stojący na wale obrońca dostaje 2 obrażenia mniej.',
   },
   kamien: {
-    nazwa: 'Kamień runiczny', grupa: 'wkrotce', limit: [0, 0, 1, 1, 1, 2, 2, 2, 3, 3], koszt: { drewno: 100, zelazo: 100, srebro: 60 }, czas: 120,
-    opis: 'Runy ochronne wzmacniające obrońców w pobliżu (działa od etapu obrony osady).',
+    nazwa: 'Kamień runiczny', grupa: 'obrona', limit: [0, 0, 1, 1, 1, 2, 2, 2, 3, 3], koszt: { drewno: 100, zelazo: 100, srebro: 60 }, czas: 120,
+    opis: 'Runy ochronne. W obronie osady obrońcy do 2 pól od kamienia otrzymują 1 obrażenie mniej (od poziomu 6: 2 mniej). Liczy się najwyższy kamień.',
   },
 };
 
@@ -171,6 +171,7 @@ export function napraw(o) {
   if (!o.bohaterowie) o.bohaterowie = nowiBohaterowie();
   if (!o.wojsko) o.wojsko = {};
   if (!o.szkolenie) o.szkolenie = [];
+  if (!o.raporty) o.raporty = [];
   return o;
 }
 
@@ -194,7 +195,17 @@ export function uplyw(o, teraz) {
   for (;;) {
     const bud = o.budynki.filter((b) => b.bud && b.bud.koniec <= teraz).sort((a, b) => a.bud.koniec - b.bud.koniec)[0];
     const szk = o.szkolenie[0] && o.szkolenie[0].koniec <= teraz ? o.szkolenie[0] : null;
-    if (!bud && !szk) break;
+    const tn = terminNajazdu(o);
+    const naj = tn !== null && tn <= teraz ? tn : null;
+    if (!bud && !szk && naj === null) break;
+    const tb = bud ? bud.bud.koniec : Infinity, ts = szk ? szk.koniec : Infinity;
+    if (naj !== null && naj <= tb && naj <= ts) {
+      // fala dotarła, a nikt nie wyszedł jej naprzeciw: obrona automatyczna
+      narosnij(o, t, naj);
+      t = Math.max(t, naj);
+      gotowe.push({ najazd: rozstrzygnijNajazd(o, naj, 'auto', null) });
+      continue;
+    }
     if (szk && (!bud || szk.koniec <= bud.bud.koniec)) {
       narosnij(o, t, szk.koniec);
       t = Math.max(t, szk.koniec);
@@ -211,6 +222,8 @@ export function uplyw(o, teraz) {
   }
   narosnij(o, t, teraz);
   o.czas = Math.max(o.czas, teraz);
+  // pierwsza fala nadciąga, gdy osada urośnie (Długi Dom 2)
+  if (!o.najazd && poziomDD(o) >= 2) o.najazd = { nr: 1, czas: teraz + PIERWSZY_NAJAZD, walka: null };
   return gotowe;
 }
 
@@ -380,11 +393,11 @@ export function werbuj(o, typ) {
 
 // Oddziały: odblokowanie od poziomu Hali Wojów, koszt, czas szkolenia, utrzymanie (żywność na godzinę).
 export const WOJSKO = {
-  woje: { nazwa: 'Woje', hala: 1, koszt: { zywnosc: 60, zelazo: 30 }, czas: 3 * 60, utrzymanie: 2 },
-  tarczownicy: { nazwa: 'Tarczownicy', hala: 2, koszt: { zywnosc: 80, zelazo: 60, drewno: 40 }, czas: 5 * 60, utrzymanie: 3 },
-  lucznicy: { nazwa: 'Łucznicy', hala: 3, koszt: { zywnosc: 70, drewno: 90 }, czas: 6 * 60, utrzymanie: 2 },
-  oszczepnicy: { nazwa: 'Oszczepnicy', hala: 5, koszt: { zywnosc: 100, zelazo: 90, drewno: 40 }, czas: 10 * 60, utrzymanie: 3 },
-  berserkerzy: { nazwa: 'Berserkerzy', hala: 7, koszt: { zywnosc: 160, zelazo: 140, srebro: 30 }, czas: 20 * 60, utrzymanie: 5 },
+  woje: { nazwa: 'Woje', hala: 1, koszt: { zywnosc: 60, zelazo: 30 }, czas: 3 * 60, utrzymanie: 2, sila: 5 },
+  tarczownicy: { nazwa: 'Tarczownicy', hala: 2, koszt: { zywnosc: 80, zelazo: 60, drewno: 40 }, czas: 5 * 60, utrzymanie: 3, sila: 6 },
+  lucznicy: { nazwa: 'Łucznicy', hala: 3, koszt: { zywnosc: 70, drewno: 90 }, czas: 6 * 60, utrzymanie: 2, sila: 4 },
+  oszczepnicy: { nazwa: 'Oszczepnicy', hala: 5, koszt: { zywnosc: 100, zelazo: 90, drewno: 40 }, czas: 10 * 60, utrzymanie: 3, sila: 6 },
+  berserkerzy: { nazwa: 'Berserkerzy', hala: 7, koszt: { zywnosc: 160, zelazo: 140, srebro: 30 }, czas: 20 * 60, utrzymanie: 5, sila: 9 },
 };
 export const KOLEJNOSC_WOJSKA = ['woje', 'tarczownicy', 'lucznicy', 'oszczepnicy', 'berserkerzy'];
 export const MAX_KOLEJKI = 5;
@@ -472,4 +485,108 @@ export function rozliczDruzyne(o, w, wygrana, polegli, ocaleli, teraz) {
     if ((o.wojsko[t] || 0) > 0) { o.wojsko[t]--; straty[t] = (straty[t] || 0) + 1; }
   }
   return { bohaterowie, straty };
+}
+
+// ======================================================================
+// OBRONA OSADY (E4)
+// ======================================================================
+// Fala trupów nadciąga co ok. dobę. Na 8 h przed nadejściem można wyjść jej naprzeciw (bitwa osobista).
+// Jeśli nikt nie stanie do bitwy, w chwili nadejścia serwer rozstrzyga obronę automatycznie:
+// siła obrony (bohaterowie, wojsko, umocnienia) przeciw sile fali.
+export const PIERWSZY_NAJAZD = 18 * H;
+export const OKNO_OBRONY = 8 * H;
+export const ZWLOKA_BITWY = 2 * H; // rozpoczęta bitwa osobista może trwać do 2 h po nadejściu fali
+export const TARCZA_PO_PORAZCE = 12 * H;
+export const odstepNajazdu = (nr) => (24 + ((nr * 7) % 12)) * H;
+export const poziomFali = (o) => (poziomDD(o) <= 3 ? 1 : poziomDD(o) <= 6 ? 2 : 3);
+export const falaKlucz = (o) => 'fala-' + poziomFali(o);
+export const NAZWY_FAL = { 1: 'Mała fala', 2: 'Wielka fala', 3: 'Nawałnica umarłych' };
+export const XP_FALI = { 1: 'wedrowiec', 2: 'wojownik', 3: 'ragnarok' };
+const najwyzszy = (o, typ) => o.budynki.filter((b) => b.typ === typ).reduce((m, b) => Math.max(m, b.poz), 0);
+
+// Kiedy serwer musi rozstrzygnąć najazd automatycznie (null = nie ma najazdu).
+export function terminNajazdu(o) {
+  if (!o.najazd) return null;
+  return o.najazd.czas + (o.najazd.walka ? ZWLOKA_BITWY : 0);
+}
+export const moznaBronic = (o, teraz) => !!o.najazd && teraz >= o.najazd.czas - OKNO_OBRONY && teraz < terminNajazdu(o);
+
+// Umocnienia osady w postaci, jakiej potrzebuje bitwa obrony.
+export function umocnienia(o) {
+  return {
+    dd: poziomDD(o),
+    brama: najwyzszy(o, 'brama'),
+    wieze: o.budynki.filter((b) => b.typ === 'wieza' && b.poz >= 1).map((b) => b.poz).sort((a, b) => b - a).slice(0, 3),
+    kamien: najwyzszy(o, 'kamien'),
+    palisada: o.budynki.filter((b) => b.typ === 'palisada' && b.poz >= 1).length,
+  };
+}
+
+export function silaObrony(o, teraz) {
+  napraw(o);
+  const u = umocnienia(o);
+  const czesci = {};
+  // trzech najsilniejszych bohaterów poza Valhallą
+  czesci.bohaterowie = Object.keys(o.bohaterowie).filter((k) => !wValhalli(o, k, teraz))
+    .map((k) => 4 + 2 * poziomBohatera(o, k)).sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0);
+  czesci.wojsko = Object.entries(o.wojsko).reduce((a, [t, n]) => a + (WOJSKO[t] ? WOJSKO[t].sila * n : 0), 0);
+  czesci.palisada = 2 * Math.min(6, Math.ceil(u.palisada / 2));
+  czesci.brama = u.brama ? 2 + 2 * u.brama : 0;
+  czesci.wieze = u.wieze.reduce((a, p) => a + 4 + 2 * p, 0);
+  czesci.kamien = u.kamien ? 3 + u.kamien : 0;
+  const razem = Object.values(czesci).reduce((a, b) => a + b, 0);
+  return { razem, czesci };
+}
+export const silaFali = (o) => [0, 26, 70, 120][poziomFali(o)] + 2 * Math.min(20, o.najazd ? o.najazd.nr : 1);
+
+// Zabiera część zgromadzonych surowców (srebro w połowie, bo strzeże go skarbiec).
+function zabierz(o, f) {
+  const straty = {};
+  for (const s2 of SUROWCE) {
+    const ile = Math.floor(o.zasoby[s2] * (s2 === 'srebro' ? f / 2 : f));
+    o.zasoby[s2] -= ile; straty[s2] = ile;
+  }
+  return straty;
+}
+
+// tryb: 'auto' albo 'bitwa'; wygrana: dla bitwy wynik od gracza, dla auto liczony z sił.
+export function rozstrzygnijNajazd(o, kiedy, tryb, wygrana) {
+  napraw(o);
+  const n = o.najazd;
+  const k = poziomFali(o);
+  const so = silaObrony(o, kiedy).razem, sf = silaFali(o);
+  if (tryb === 'auto') wygrana = so >= sf;
+  const raport = { nr: n.nr, czas: kiedy, tryb, wynik: wygrana ? 'win' : 'lose', fala: NAZWY_FAL[k], sila: [so, sf], straty: {}, lup: {}, slawa: 0 };
+  if (wygrana) {
+    raport.slawa = (tryb === 'bitwa' ? 6 : 2) * k;
+    o.slawa += raport.slawa;
+    if (tryb === 'bitwa') raport.lup = dodajLup(o, { drewno: 100 * k, zelazo: 80 * k, zywnosc: 0, srebro: 20 * k }).dodane;
+  } else {
+    const f = Math.min(0.35, Math.max(tryb === 'bitwa' ? 0.15 : 0.1, (sf - so) / sf));
+    raport.straty = zabierz(o, f);
+  }
+  o.raporty.unshift(raport);
+  o.raporty = o.raporty.slice(0, 10);
+  o.najazd = { nr: n.nr + 1, czas: Math.max(n.czas, kiedy) + odstepNajazdu(n.nr) + (wygrana ? 0 : TARCZA_PO_PORAZCE), walka: null };
+  return raport;
+}
+
+// Bitwa osobista: start zapisuje drużynę, koniec rozlicza drużynę i najazd.
+export function zacznijObrone(o, druzyna, oddzialy, teraz, id) {
+  napraw(o);
+  if (!o.najazd) return { blad: 'Żadna fala jeszcze nie nadciąga.' };
+  if (!moznaBronic(o, teraz)) return { blad: 'Fala jest jeszcze za daleko. Wyjść jej naprzeciw możesz na 8 godzin przed nadejściem.' };
+  const p = przygotujWyprawe(o, druzyna, oddzialy, teraz);
+  if (p.blad) return p;
+  o.najazd.walka = { id, start: teraz, druzyna: p.druzyna, oddzialy: p.oddzialy, poziom: XP_FALI[poziomFali(o)] };
+  return { ...p, obrona: umocnienia(o), fala: falaKlucz(o) };
+}
+export function zakonczObrone(o, id, wygrana, polegli, ocaleli, teraz) {
+  napraw(o);
+  const w = o.najazd && o.najazd.walka;
+  if (!w || w.id !== id) return { blad: 'Ten najazd został już rozstrzygnięty.' };
+  if (teraz - w.start < MIN_CZAS_WYPRAWY) return { blad: 'Bitwa trwała za krótko, żeby ją rozliczyć.' };
+  const druzyna = rozliczDruzyne(o, w, wygrana, polegli, ocaleli, teraz);
+  const raport = rozstrzygnijNajazd(o, teraz, 'bitwa', wygrana);
+  return { druzyna, raport };
 }

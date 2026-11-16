@@ -64,7 +64,7 @@ export class Board {
   // ---------- warstwa terenu (rysowana raz) ----------
   _ensureStatic() {
     if (!this.view) return;
-    const k = `${this.W}x${this.H}@${this.dpr}|${this.view.frost}`;
+    const k = `${this.W}x${this.H}@${this.dpr}|${this.view.frost}|${this.view.map.join('')}`;
     if (k === this.staticKey) return;
     this.staticKey = k;
     this._layout();
@@ -114,6 +114,14 @@ export class Board {
         g.lineWidth = Math.max(0.6, s * 0.018);
         g.strokeStyle = c < this.view.frost ? 'rgba(210,235,255,0.5)' : 'rgba(255,228,180,0.10)'; g.stroke();
       }
+    }
+    // wał palisady: pale rysowane na polach wału (po wszystkich heksach, żeby zachodziły na sąsiadów)
+    const pal = this.img['bud-palisada'];
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      if (!TERRAIN[this.view.map[r][c]].wal) continue;
+      const [x, y] = center(c, r, s);
+      if (pal) { const w = s * 1.9, h = (w * pal.height) / pal.width; g.drawImage(pal, x - w / 2, y - h * 0.62, w, h); }
+      else { g.fillStyle = '#5a4026'; for (let i = -2; i <= 2; i++) g.fillRect(x + i * s * 0.3 - s * 0.1, y - s * 0.55, s * 0.2, s * 0.9); }
     }
   }
 
@@ -461,6 +469,50 @@ export class Board {
     }
   }
 
+  // Budowla w obronie osady: obrazek budynku na polu zamiast żetonu, pasek życia pod spodem.
+  _budowla(g, u, x, y, s, a) {
+    const d = jednostka(u.type), v = this.view, t = this.t;
+    const img = this.img['bud-' + d.sprite];
+    const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+    const W = s * (u.type === 'dlugi-dom' ? 2.2 : u.type === 'brama' ? 1.9 : 1.6);
+    g.save();
+    g.globalAlpha = (a.alpha ?? 1) * (u.hp > 0 ? 1 : 0.4);
+    g.fillStyle = 'rgba(0,0,0,0.5)';
+    g.beginPath(); g.ellipse(x, y + s * 0.3, W * 0.42, s * 0.32, 0, 0, Math.PI * 2); g.fill();
+    if (this.ui.selected === u.id || (this.ui.runeTarget && u.hp > 0)) {
+      g.strokeStyle = `rgba(242,211,138,${0.45 + 0.55 * pulse})`; g.lineWidth = s * 0.07;
+      g.beginPath(); g.ellipse(x, y + s * 0.25, W * 0.5, s * 0.45, 0, 0, Math.PI * 2); g.stroke();
+    }
+    if (img) {
+      const h = (W * img.height) / img.width;
+      g.drawImage(img, x - W / 2, y + s * 0.45 - h, W, h);
+    } else {
+      g.fillStyle = '#4a3828'; g.fillRect(x - s * 0.5, y - s * 0.6, s, s);
+    }
+    // życie
+    const pw = Math.max(s * 1.2, 30), ph = Math.max(15, s * 0.36), py = y + s * 0.62;
+    g.fillStyle = 'rgba(8,6,5,0.92)'; this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.fill();
+    const ratio = Math.max(0, u.hp / u.maxHp);
+    g.save(); this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.clip();
+    g.fillStyle = ratio <= 0.34 ? '#b5352a' : '#7d8a96'; g.fillRect(x - pw / 2, py - ph / 2, pw * ratio, ph);
+    g.restore();
+    g.strokeStyle = 'rgba(220,230,240,0.6)'; g.lineWidth = 1; this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.stroke();
+    g.fillStyle = '#fff8ec'; g.font = `700 ${Math.round(ph * 0.78)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(`${u.hp}`, x, py + ph * 0.04);
+    if (u.shield > 0) {
+      const sx = x - pw / 2 - s * 0.1, sr = Math.max(8, s * 0.24);
+      g.fillStyle = '#163044'; g.strokeStyle = '#a6cfe9'; g.lineWidth = Math.max(1, s * 0.03);
+      g.beginPath(); g.arc(sx, py, sr, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = '#e4f3ff'; g.font = `700 ${Math.round(sr * 1.15)}px Cinzel, serif`; g.fillText(String(u.shield), sx, py + 1);
+    }
+    if (d.cel && u.hp > 0) {
+      g.font = `700 ${Math.round(Math.max(10, s * 0.24))}px Cinzel, serif`; g.textBaseline = 'alphabetic';
+      g.lineWidth = Math.max(2, s * 0.05); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.fillStyle = '#f2d38a';
+      g.strokeText('BROŃCIE', x, y - s * 0.95); g.fillText('BROŃCIE', x, y - s * 0.95);
+    }
+    g.restore();
+  }
+
   _drawUnits(g) {
     const v = this.view, s = this.s, t = this.t;
     const list = v.units.filter((u) => u.hp > 0 || (this.anim.get(u.id) || {}).dying);
@@ -472,6 +524,7 @@ export class Board {
       const [x, y] = this.unitPos(u);
       const boss = u.side === 'enemy' && ENEMIES[u.type].boss;
       const R = s * (boss ? 0.8 : u.oddzial ? 0.6 : 0.7) * (a.scale ?? 1);
+      if (u.budowla) { this._budowla(g, u, x, y, s, a); continue; }
       g.save();
       g.globalAlpha = a.alpha ?? 1;
       // cień

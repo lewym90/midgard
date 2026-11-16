@@ -86,8 +86,9 @@ class Osada {
   }
 
   // ---------- start ----------
-  init(onWyprawa, onWyjdz) {
+  init(onWyprawa, onWyjdz, onObrona) {
     this.onWyprawa = onWyprawa;
+    this.onObrona = onObrona;
     this.cv = $('o-canvas');
     this.g = this.cv.getContext('2d');
     $('o-wroc').onclick = onWyjdz;
@@ -143,8 +144,26 @@ class Osada {
   _przyjmij(r) {
     this.o = r.osada;
     this.przes = r.teraz - Date.now();
-    for (const g of r.gotowe || []) toast(g.oddzial ? `Wyszkolono: ${ODDZIALY[g.oddzial].name}.` : `Ukończono: ${O.BUDYNKI[g.typ].nazwa}, poziom ${g.poz}.`);
+    for (const g of r.gotowe || []) {
+      if (g.najazd) continue; // raporty z najazdów pokazuje _nowyRaport
+      toast(g.oddzial ? `Wyszkolono: ${ODDZIALY[g.oddzial].name}.` : `Ukończono: ${O.BUDYNKI[g.typ].nazwa}, poziom ${g.poz}.`);
+    }
+    this._nowyRaport();
     this._tik(true);
+  }
+
+  // Najnowszy raport z najazdu, którego gracz jeszcze nie widział (pamiętany na urządzeniu).
+  _kluczRaportu() { return 'midgard.raport.' + (konto.nick || ''); }
+  oznaczRaport(nr) { try { localStorage.setItem(this._kluczRaportu(), String(nr)); } catch (e) {} }
+  _nowyRaport() {
+    const r = this.o && this.o.raporty && this.o.raporty[0];
+    if (!r) return;
+    let widziany = 0;
+    try { widziany = Number(localStorage.getItem(this._kluczRaportu())) || 0; } catch (e) {}
+    if (r.nr <= widziany) return;
+    this.oznaczRaport(r.nr);
+    if (r.tryb === 'bitwa') return; // wynik bitwy osobistej gracz widział na ekranie końca
+    toast(`Najazd nr ${r.nr}: ${opisRaportu(r)}`);
   }
 
   async pobierz() {
@@ -193,7 +212,10 @@ class Osada {
     $('o-herb-poz').textContent = O.poziomDD(o);
     $('o-staty').innerHTML = `<span class="o-chip" title="Sława"><img src="${ikonaUrl('ik-slawa')}" alt="">${liczba(o.slawa)}</span>` +
       `<span class="o-chip${wolni ? '' : ' pelny'}" title="Wolni budowniczowie"><img src="${ikonaUrl('ik-budowniczy')}" alt="">${wolni}/${O.budowniczowie(o)}</span>` +
-      (O.pojemnoscWojska(o) ? `<span class="o-chip${o.szkolenie.length ? ' szkoli' : ''}" title="Wojsko"><img src="${ikonaUrl('ik-wojsko')}" alt="">${O.liczbaWojska(o)}/${O.pojemnoscWojska(o)}</span>` : '');
+      (O.pojemnoscWojska(o) ? `<span class="o-chip${o.szkolenie.length ? ' szkoli' : ''}" title="Wojsko"><img src="${ikonaUrl('ik-wojsko')}" alt="">${O.liczbaWojska(o)}/${O.pojemnoscWojska(o)}</span>` : '') +
+      (o.najazd ? `<button class="o-chip najazd${O.moznaBronic(o, this.teraz()) ? ' blisko' : ''}" id="o-najazd" title="Najazd"><img src="assets/img/wrogowie/draugr-zeton.webp" alt="">${this._doNajazdu(o)}</button>` : '');
+    const bn = $('o-najazd');
+    if (bn) bn.onclick = () => { audio.unlock(); this.wybrany = null; this.polePuste = null; this.tryb = null; this._pokazPanel('najazd'); };
     const doZebrania = o.budynki.filter((b) => O.BUDYNKI[b.typ].produkcja && b.bufor >= 1).length;
     $('o-zbierz').disabled = !doZebrania;
     let lic = $('o-zbierz').querySelector('.o-med-licznik');
@@ -262,6 +284,7 @@ class Osada {
     if (!this.widokPanelu) { $('o-sheet').hidden = true; return; }
     $('o-sheet').hidden = false;
     if (this.widokPanelu === 'bohaterowie') return this._panelBohaterow(box, o, tylkoLiczniki);
+    if (this.widokPanelu === 'najazd') return this._panelNajazdu(box, o, tylkoLiczniki);
     if (this.widokPanelu === 'budynek') {
       const b = o.budynki.find((x) => x.id === this.wybrany);
       if (!b) { this.zamknijPanel(); return; }
@@ -400,6 +423,53 @@ class Osada {
     box.querySelectorAll('[data-werbuj]').forEach((btn) => {
       btn.onclick = () => this.akcja('werbuj', { typ: btn.dataset.werbuj }, () => { audio.play('klik'); toast(`${HEROES[btn.dataset.werbuj].name} dołącza do osady.`); });
     });
+  }
+
+  // ---------- najazdy ----------
+  _doNajazdu(o) {
+    const d = o.najazd.czas - this.teraz();
+    if (d <= 0) return o.najazd.walka ? 'Bitwa trwa' : 'U bram!';
+    const h = Math.floor(d / 3600000);
+    return h >= 1 ? `Fala za ${h} h` : `Fala za ${Math.max(1, Math.ceil(d / 60000))} min`;
+  }
+
+  _panelNajazdu(box, o, tylkoLiczniki) {
+    const t = this.teraz(), n = o.najazd;
+    const moze = O.moznaBronic(o, t);
+    const klucz = 'naj:' + JSON.stringify([n && n.nr, n && !!n.walka, moze, o.raporty.length && o.raporty[0].nr, O.silaObrony(o, t).razem, this.zajety]);
+    if (tylkoLiczniki && this._panelKlucz === klucz) {
+      const l = box.querySelector('[data-naj]');
+      if (l && n) l.textContent = czas(Math.max(0, n.czas - t));
+      return;
+    }
+    this._panelKlucz = klucz;
+    const so = O.silaObrony(o, t), sf = n ? O.silaFali(o) : 0;
+    const NAZWY = { bohaterowie: 'bohaterowie', wojsko: 'wojsko', palisada: 'palisada', brama: 'brama', wieze: 'wieże', kamien: 'kamień runiczny' };
+    const czesci = Object.entries(so.czesci).filter(([, v]) => v > 0).map(([k, v]) => `${NAZWY[k]} ${v}`).join(', ');
+    let h = `<div class="o-head"><img src="assets/img/wrogowie/draugr-zeton.webp" alt="" class="o-naj-ik"><div><h3 class="wstega">Najazd</h3>
+      <div class="o-poz">${n ? `Fala nr ${n.nr}: ${O.NAZWY_FAL[O.poziomFali(o)]}` : 'Na razie spokój'}</div></div></div>`;
+    if (!n) {
+      h += '<p class="o-opis">Umarli nie interesują się jeszcze tak małą osadą. Pierwsza fala nadciągnie, gdy rozbudujesz Długi Dom na poziom 2.</p>';
+    } else {
+      h += `<p class="o-opis">${n.czas > t ? `Fala dotrze za <b data-naj>${czas(n.czas - t)}</b> (o ${new Date(n.czas).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}).` : n.walka ? 'Fala jest u bram, a twoja drużyna walczy.' : 'Fala jest u bram.'}
+        Na 8 godzin przed nadejściem możesz wyjść jej naprzeciw i bronić osady osobiście. Jeśli tego nie zrobisz, osada broni się sama.</p>
+        <div class="o-sily">
+          <div class="o-sila"><span>Siła obrony</span><b>${so.razem}</b><small>${czesci || 'brak'}</small></div>
+          <div class="o-sila wrog"><span>Siła fali</span><b>${sf}</b><small>rośnie z każdą falą</small></div>
+        </div>
+        <p class="o-ef">Obrona automatyczna: ${so.razem >= sf ? '<b class="o-ok">osada odeprze falę</b> (sława +' + 2 * O.poziomFali(o) + ')' : `<span class="o-brak">trupy się wedrą</span> i zabiorą ok. ${Math.round(100 * Math.min(0.35, Math.max(0.1, (sf - so.razem) / sf)))}% zapasów`}.
+        Bitwa osobista daje więcej sławy i łup, ale porażka kosztuje co najmniej 15% zapasów.</p>
+        <div class="o-row o-row-end"><button class="btn btn-gold" data-obrona ${moze && !this.zajety ? '' : 'disabled'}>${moze ? 'Wyjdź naprzeciw fali' : 'Fala jeszcze za daleko'}</button></div>`;
+    }
+    if (o.raporty.length) {
+      h += `<div class="o-next"><h4>Kroniki najazdów</h4><div class="o-raporty">${o.raporty.slice(0, 5).map((r) => `<div class="o-raport ${r.wynik}">
+        <b>Nr ${r.nr} · ${new Date(r.czas).toLocaleString('pl-PL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</b>
+        <span>${r.fala}, ${r.tryb === 'auto' ? 'obrona automatyczna' : 'bitwa'} · ${opisRaportu(r)}</span></div>`).join('')}</div></div>`;
+    }
+    h += '<p class="o-premie">Umocnienia (palisada, brama, wieże, kamień runiczny) stawiasz z listy budowy. W bitwie obrony stają na polu walki.</p>';
+    box.innerHTML = h;
+    const b = box.querySelector('[data-obrona]');
+    if (b) b.onclick = () => { this.zamknijPanel(); this.onObrona && this.onObrona(); };
   }
 
   // ---------- wojsko w Hali Wojów ----------
@@ -949,3 +1019,13 @@ class Osada {
 }
 
 export const osada = new Osada();
+
+const NAZWY_SUR_D = { drewno: 'drewna', zelazo: 'żelaza', zywnosc: 'żywności', srebro: 'srebra' };
+export function opisRaportu(r) {
+  if (r.wynik === 'win') {
+    const l = Object.entries(r.lup || {}).filter(([, n]) => n > 0).map(([k, n]) => `${O.NAZWY_SUROWCOW[k].toLowerCase()} +${n}`);
+    return `${r.tryb === 'auto' ? 'Osada odparła falę sama.' : 'Najazd odparty.'}${r.slawa ? ` Sława +${r.slawa}.` : ''}${l.length ? ` Łup: ${l.join(', ')}.` : ''}`;
+  }
+  const s = Object.entries(r.straty || {}).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${NAZWY_SUR_D[k]}`);
+  return `Trupy wdarły się do osady. Stracono: ${s.length ? s.join(', ') : 'nic'}.`;
+}

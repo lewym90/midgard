@@ -1,14 +1,15 @@
 // Panele DOM: bohaterowie, nici Norn, runy, pasek górny, teksty zasad.
-import { HEROES, ENEMIES, RUNES, SCENARIO, HERO_ORDER, NAMES, ODDZIALY, ODDZIALY_ORDER, jednostka } from './data.js';
+import { HEROES, ENEMIES, RUNES, SCENARIO, HERO_ORDER, NAMES, ODDZIALY, ODDZIALY_ORDER, BUDOWLE, jednostka } from './data.js';
 import { runeSvg } from './runes.js';
-import { heroAttackValue, upcomingWaves, canUsePower, attackTargets, remainingInBarrow, bossAwakeAt, level, wavesFor } from './engine.js';
+import { heroAttackValue, upcomingWaves, canUsePower, attackTargets, remainingInBarrow, bossAwakeAt, level, wavesFor, scen } from './engine.js';
 
 const $ = (id) => document.getElementById(id);
 
 const GEN = NAMES.gen;
 const FALLEN = NAMES.fallen;
 
-export const tokenUrl = (u) => `assets/img/${u.oddzial || ODDZIALY[u.type] ? 'oddzialy' : u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`;
+export const tokenUrl = (u) => (BUDOWLE[u.type] && u.side === 'hero' ? `assets/img/osada/${BUDOWLE[u.type].sprite}.webp`
+  : `assets/img/${u.oddzial || ODDZIALY[u.type] ? 'oddzialy' : u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`);
 
 function plural(n, one, few, many) {
   if (n === 1) return one;
@@ -17,15 +18,18 @@ function plural(n, one, few, many) {
 }
 
 export function renderTop(v) {
-  $('top-goal').textContent = SCENARIO.goal;
-  $('stat-round').innerHTML = `Runda ${Math.max(1, v.round)}<small>/ ${SCENARIO.maxRounds}</small>`;
+  const S = scen(v);
+  $('top-goal').textContent = S.goal;
+  document.querySelector('.top-scenario').textContent = S.title;
+  $('stat-round').innerHTML = `Runda ${Math.max(1, v.round)}<small>/ ${S.maxRounds}</small>`;
   const fr = $('stat-frost');
+  fr.hidden = S.frostStart > S.maxRounds;
   if (v.frost > 0) {
     fr.classList.add('frost-on');
     fr.innerHTML = `Mróz <small>${v.frost} ${plural(v.frost, 'kolumna', 'kolumny', 'kolumn')}</small>`;
   } else {
     fr.classList.remove('frost-on');
-    fr.innerHTML = `Mróz <small>od rundy ${SCENARIO.frostStart}</small>`;
+    fr.innerHTML = `Mróz <small>od rundy ${S.frostStart}</small>`;
   }
   let coins = '';
   const ileMonet = Math.max(v.hamingja, 3 + ((v.premie && v.premie.hamingja) || 0));
@@ -41,16 +45,16 @@ export function renderHeroes(v, sel, handlers) {
     const d = jednostka(u.type);
     const dead = u.hp <= 0;
     const card = document.createElement('div');
-    card.className = 'hero-card' + (u.oddzial ? ' oddzial' : '') + (sel.heroId === u.id ? ' selected' : '') + (dead ? ' dead' : '') + (sel.dieId != null && !dead ? ' target-mode' : '');
+    card.className = 'hero-card' + (u.oddzial ? ' oddzial' : '') + (u.budowla ? ' oddzial budowla' : '') + (sel.heroId === u.id ? ' selected' : '') + (dead ? ' dead' : '') + (sel.dieId != null && !dead ? ' target-mode' : '');
     const ratio = u.hp / u.maxHp;
     const atk = heroAttackValue(v, u);
     const canAtk = !u.attacked && attackTargets(v, u).length > 0;
     const runeChips = Object.entries(u.runes).flatMap(([f, n]) => Array.from({ length: n }, () => `<span class="rune-chip" title="${RUNES[f].name}">${runeSvg(f)}</span>`)).join('');
     const powerOk = !dead && v.phase === 'narada' && canUsePower(v, u);
     card.innerHTML = `
-      ${u.oddzial ? `<div class="hero-avatar troop-av"><span>${d.name[0]}</span><img src="${tokenUrl(u)}" alt="" onerror="this.remove()"></div>` : `<div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>`}
+      ${u.budowla ? `<div class="hero-avatar bud-av"><img src="assets/img/osada/${d.sprite}.webp" alt=""></div>` : u.oddzial ? `<div class="hero-avatar troop-av"><span>${d.name[0]}</span><img src="${tokenUrl(u)}" alt="" onerror="this.remove()"></div>` : `<div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>`}
       <div class="hero-name">${d.name}${u.poz ? ` <small class="hero-poz">poz. ${u.poz}</small>` : ''}</div>
-      <div class="hero-role">${dead ? (u.oddzial ? 'Rozbici' : FALLEN[u.type]) : d.role}</div>
+      <div class="hero-role">${dead ? (u.budowla ? 'Zburzona' : u.oddzial ? 'Rozbici' : FALLEN[u.type]) : d.role}</div>
       <div class="hp">
         <div class="hp-bar"><div class="hp-fill ${ratio <= 0.34 ? 'low' : ''}" style="width:${ratio * 100}%"></div></div>
         <span class="hp-num">${u.hp}/${u.maxHp}</span>
@@ -58,13 +62,13 @@ export function renderHeroes(v, sel, handlers) {
       </div>
       ${dead ? '' : `
       <div class="hero-stats">
-        <span>Ruch <b>${u.moveLeft}</b></span>
-        <span class="${u.attacked ? 'done' : ''}">Atak <b>${atk}</b>${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span>
+        ${u.budowla ? (d.atk ? '' : '<span>Nie walczy</span>') : `<span>Ruch <b>${u.moveLeft}</b></span>`}
+        ${u.budowla && !d.atk ? '' : `<span class="${u.attacked ? 'done' : ''}">Atak <b>${atk}</b>${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span>`}
         ${u.attacked ? '<span>atak wykonany</span>' : canAtk ? '<span style="color:#ef7a64">wróg w zasięgu</span>' : ''}
       </div>
       ${runeChips ? `<div class="hero-runes">${runeChips}</div>` : ''}
       ${u.guard ? '<div class="guard-on">Przyjmuje ciosy za sąsiadów</div>' : ''}
-      ${u.oddzial ? '' : `<div class="hero-power">
+      ${u.oddzial || u.budowla ? '' : `<div class="hero-power">
         <button class="btn btn-small" data-power="${u.id}" ${powerOk ? '' : 'disabled'}>${runeSvg('K', 'rune inline-rune')} ${d.power}</button>
         <div class="power-desc">${d.powerDesc} Wymaga runy Kenaz.</div>
       </div>`}
@@ -116,17 +120,22 @@ export function renderNorns(v, sel, handlers) {
   const waves = upcomingWaves(v, 2);
   const left = remainingInBarrow(v);
   const boss = v.units.find((x) => x.type === 'pan-kurhanu');
-  const bossLine = !boss
-    ? `Pan Kurhanu śpi. Obudzi się w rundzie ${bossAwakeAt(v)}.`
-    : boss.hp > 0 ? `<b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>. Jego śmierć kończy bitwę, a wszystkie trupy rozsypią się w proch.` : 'Pan Kurhanu nie żyje.';
-  const barrow = `<div class="barrow">W kurhanie czeka jeszcze: <b>${left} ${plural(left, 'trup', 'trupy', 'trupów')}</b>.<div class="boss-line">${bossLine}</div></div>`;
+  const obrona = scen(v).winOnTime;
+  const dom = v.units.find((x) => x.type === 'dlugi-dom');
+  const bossAt = bossAwakeAt(v);
+  const bossLine = obrona
+    ? `${dom ? `<b>Długi Dom: ${dom.hp}/${dom.maxHp}</b>. ` : ''}Do świtu: ${Math.max(0, scen(v).maxRounds - v.round)} ${plural(Math.max(0, scen(v).maxRounds - v.round), 'runda', 'rundy', 'rund')}.${bossAt && !boss ? ` W rundzie ${bossAt} przyjdzie Pan Kurhanu.` : boss && boss.hp > 0 ? ` <b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>.` : ''}`
+    : !boss
+      ? `Pan Kurhanu śpi. Obudzi się w rundzie ${bossAt}.`
+      : boss.hp > 0 ? `<b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>. Jego śmierć kończy bitwę, a wszystkie trupy rozsypią się w proch.` : 'Pan Kurhanu nie żyje.';
+  const barrow = `<div class="barrow">${obrona ? 'W lesie czeka jeszcze' : 'W kurhanie czeka jeszcze'}: <b>${left} ${plural(left, 'trup', 'trupy', 'trupów')}</b>.<div class="boss-line">${bossLine}</div></div>`;
   $('barrow').innerHTML = barrow;
   if (volva && waves.length) {
     fs.innerHTML = '<h3>Wieszczba Völvy</h3>' + waves.map((w) => {
       const counts = {};
       for (const t of w.units) counts[t] = (counts[t] || 0) + 1;
       const txt = Object.entries(counts).map(([t, n]) => (n > 1 ? `${n}× ` : '') + ENEMIES[t].name).join(', ');
-      return `<p><b>Runda ${w.round}:</b> z kurhanu wstanie ${txt}.</p>`;
+      return `<p><b>Runda ${w.round}:</b> ${obrona ? 'z lasu wyjdzie' : 'z kurhanu wstanie'} ${txt}.</p>`;
     }).join('');
   } else if (hadVolva && !volva) {
     fs.innerHTML = '<h3>Wieszczba</h3><p>Völva poległa. Nie wiecie już, kiedy przyjdą kolejni.</p>';
@@ -216,6 +225,15 @@ export function rulesHtml() {
   <ul>
     ${ODDZIALY_ORDER.map((k) => ODDZIALY[k]).map((h) => `<li><b>${h.name}</b> (życie ${h.hp}, ruch ${h.move}, atak ${h.atk}${h.range > 1 ? `, zasięg ${h.range}` : ''}). ${h.passive}</li>`).join('')}
   </ul>
+  <h3>Obrona osady</h3>
+  <p>Gdy Długi Dom osiągnie poziom 2, do osady zaczynają ciągnąć fale trupów, mniej więcej co dobę. Licznik fali widać u góry ekranu osady. Na 8 godzin przed nadejściem możesz wyjść jej naprzeciw: wtedy walczysz na polu przed palisadą. Bronisz Długiego Domu przez 8 rund albo do rozbicia wszystkich trupów. Przegrywasz, gdy padnie Długi Dom albo wszyscy bohaterowie.</p>
+  <ul>
+    <li><b>Wał palisady.</b> Każde 2 odcinki palisady w osadzie to jedno pole wału (najwyżej 6). Trupy przez wał nie przejdą, twoi przechodzą, a stojący na wale dostaje 2 obrażenia mniej.</li>
+    <li><b>Brama</b> zamyka przejście w środku wału. Twoi przez nią przechodzą, trupy muszą ją rozbić.</li>
+    <li><b>Wieże łucznicze</b> strzelają na 3 pola. Wybierasz je jak bohatera i atakujesz nimi. Możesz im dać runę ataku, tarczy albo leczenia.</li>
+    <li><b>Kamień runiczny</b> osłania: twoi do 2 pól od niego dostają 1 obrażenie mniej.</li>
+    <li>Jeśli nie staniesz do bitwy, osada broni się sama: liczy się siła bohaterów, wojska i umocnień przeciw sile fali. Przegrana kosztuje część zapasów (srebra mniej, bo pilnuje go skarbiec), a następna fala przychodzi później.</li>
+  </ul>
   <h3>Wrogowie</h3>
   <ul>
     ${Object.values(ENEMIES).map((e) => `<li><b>${e.name}</b> (życie ${e.hp}, ruch ${e.move}, cios ${e.atk}${e.range > 1 ? `, zasięg ${e.range}` : ''}). ${e.desc}</li>`).join('')}
@@ -252,7 +270,7 @@ export function renderTeam(picked, onToggle, status = null) {
 }
 
 // Wybór oddziałów na wyprawę. wojsko: { typ: ile }, wybrane: lista typów, limit: miejsca w bitwie.
-export function renderTroops(wojsko, wybrane, limit, onZmiana) {
+export function renderTroops(wojsko, wybrane, limit, onZmiana, obrona = false) {
   const box = $('team-troops');
   const typy = ODDZIALY_ORDER.filter((t) => wojsko[t] > 0);
   box.hidden = !typy.length && !limit;
@@ -265,7 +283,7 @@ export function renderTroops(wojsko, wybrane, limit, onZmiana) {
       <div class="troop-txt"><b>${d.name}</b><small>Życie ${d.hp} · Atak ${d.atk}${d.range > 1 ? ` · zasięg ${d.range}` : ''} · masz ${wojsko[t]}</small></div>
       <div class="troop-ile"><button class="btn btn-small" data-minus="${t}" ${ile(t) ? '' : 'disabled'}>−</button><b>${ile(t)}</b>
       <button class="btn btn-small" data-plus="${t}" ${ile(t) < wojsko[t] && wybrane.length < limit ? '' : 'disabled'}>+</button></div></div>`; }).join('')}</div>
-    ${wybrane.length ? `<p class="team-troops-pusto">Kurhan czuje żywych: ${wybrane.length} ${plural(wybrane.length, 'trup więcej', 'trupy więcej', 'trupów więcej')}, Pan Kurhanu silniejszy o ${SCENARIO.troopBossHp * wybrane.length} życia.</p>` : ''}`;
+    ${wybrane.length && !obrona ? `<p class="team-troops-pusto">Kurhan czuje żywych: ${wybrane.length} ${plural(wybrane.length, 'trup więcej', 'trupy więcej', 'trupów więcej')}, Pan Kurhanu silniejszy o ${SCENARIO.troopBossHp * wybrane.length} życia.</p>` : ''}`;
   box.querySelectorAll('[data-plus]').forEach((b) => { b.onclick = () => onZmiana(b.dataset.plus, 1); });
   box.querySelectorAll('[data-minus]').forEach((b) => { b.onclick = () => onZmiana(b.dataset.minus, -1); });
 }

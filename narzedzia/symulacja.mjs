@@ -127,3 +127,43 @@ for (const lvl of ['wojownik', 'ragnarok']) for (const [nazwa, rw, odd] of WARIA
   }
   console.log(`z osady ${lvl.padEnd(9)} ${nazwa.padEnd(22)} wygrane ${Math.round(100 * win / M2)}%` + (wyslano ? `, polegli z oddziałów ${Math.round(100 * padlo / wyslano)}%` : ''));
 }
+
+// Obrona osady: fale z lasu, budowle z osady. Sprawdza silnik obrony i pokazuje, ile dają umocnienia.
+const OBRONY = [
+  ['bez umocnień', { dd: 2 }],
+  ['palisada 8 + brama 1', { dd: 2, palisada: 8, brama: 1 }],
+  ['+ wieża 1', { dd: 2, palisada: 8, brama: 1, wieze: [1] }],
+  ['DD5: pełna, 2 wieże 3, kamień 3', { dd: 5, palisada: 20, brama: 3, wieze: [3, 3], kamien: 3 }],
+  ['DD8: pełna, 3 wieże 6, kamień 6', { dd: 8, palisada: 32, brama: 6, wieze: [6, 6, 6], kamien: 6 }],
+];
+const ROZWOJ = { 'fala-1': {}, 'fala-2': { poz: 4, zycie: 3, atak: 1 }, 'fala-3': { poz: 7, zycie: 6, atak: 2 } };
+for (const fala of ['fala-1', 'fala-2', 'fala-3']) for (const [nazwa, ob] of OBRONY) {
+  let win = 0, dom = 0, rany = 0;
+  const M3 = Math.min(N, 150);
+  for (let i = 0; i < M3; i++) {
+    const team = teams[i % teams.length];
+    const rozwoj = Object.fromEntries(team.map((k) => [k, ROZWOJ[fala]]));
+    const s = E.newBattle(i * 7919 + 3, team, fala, null, { rozwoj, scenariusz: 'obrona', obrona: ob });
+    const miejsca = new Map(s.units.filter((u) => u.budowla).map((u) => [u.id, key(u.c, u.r)]));
+    E.startRound(s);
+    let guard = 0;
+    while (!s.result && guard++ < 50) {
+      botRound(s, true);
+      if (s.result) break;
+      E.resolveEnemyTurn(s);
+      const seen = new Set();
+      for (const u of s.units.filter((u) => u.hp > 0)) {
+        const k = key(u.c, u.r);
+        if (seen.has(k)) throw new Error('Dwie jednostki na polu ' + k);
+        if (u.side === 'enemy' && s.map[u.r][u.c] === 'P') throw new Error('Trup na wale ' + k);
+        if (u.budowla && miejsca.get(u.id) !== k) throw new Error('Budowla się ruszyła: ' + u.type);
+        seen.add(k);
+      }
+    }
+    if (!s.result) throw new Error('Obrona bez wyniku');
+    win += s.result === 'win';
+    dom += s.powod === 'dom';
+    const d = s.units.find((u) => u.type === 'dlugi-dom'); rany += 1 - d.hp / d.maxHp;
+  }
+  console.log(`obrona ${fala} ${nazwa.padEnd(32)} wygrane ${Math.round(100 * win / M3)}%, Długi Dom padł w ${Math.round(100 * dom / M3)}%, średnio stracił ${Math.round(100 * rany / M3)}% życia`);
+}

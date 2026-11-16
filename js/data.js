@@ -7,6 +7,7 @@ export const TERRAIN = {
   'B': { id: 'bagno', name: 'Bagno', cost: 2, def: 0, img: 'bagno', desc: 'Ruch kosztuje 2.' },
   'S': { id: 'skaly', name: 'Skały', cost: 2, def: 1, img: 'skaly', range: 1, desc: 'Ruch kosztuje 2. Osłona: 1 obrażenie mniej. Ataki z dystansu sięgają o 1 pole dalej.' },
   'K': { id: 'kurhan', name: 'Kurhan', cost: 99, def: 0, img: 'kurhan', blocked: true, desc: 'Nie da się wejść. Stąd wstają umarli.' },
+  'P': { id: 'wal', name: 'Wał palisady', cost: 2, def: 2, img: 'snieg', wal: true, desc: 'Trupy nie przejdą przez palisadę. Wasi przechodzą (ruch kosztuje 2), a stojący na wale otrzymuje 2 obrażenia mniej.' },
 };
 
 export const HEROES = {
@@ -75,14 +76,35 @@ export const ODDZIALY = {
   },
 };
 export const ODDZIALY_ORDER = ['woje', 'tarczownicy', 'lucznicy', 'oszczepnicy', 'berserkerzy'];
-// Dane jednostki po stronie drużyny: bohater albo oddział.
-export const jednostka = (type) => HEROES[type] || ODDZIALY[type];
+
+// Budowle w obronie osady: nieruchome, bez mocy, nie dokładają run. Życie i siła zależą od poziomu w osadzie.
+export const BUDOWLE = {
+  'dlugi-dom': {
+    name: 'Długi Dom', role: 'Serce osady', hp: 20, move: 0, atk: 0, range: 1, budowla: true, cel: true, sprite: 'dlugi_dom',
+    passive: 'Jeśli Długi Dom padnie, obrona jest przegrana. Trupy uderzą w niego, gdy nikt nie stanie im na drodze.',
+  },
+  brama: {
+    name: 'Brama', role: 'Umocnienie', hp: 10, move: 0, atk: 0, range: 1, budowla: true, sprite: 'brama',
+    passive: 'Zamyka przejście w palisadzie. Wasi przechodzą, trupy muszą ją rozbić.',
+  },
+  wieza: {
+    name: 'Wieża łucznicza', role: 'Umocnienie', hp: 8, move: 0, atk: 2, range: 3, budowla: true, sprite: 'wieza',
+    passive: 'Strzela na 3 pola. Nie rusza się. Możesz dać jej runę ataku, tarczy albo leczenia.',
+  },
+  kamien: {
+    name: 'Kamień runiczny', role: 'Umocnienie', hp: 12, move: 0, atk: 0, range: 1, budowla: true, sprite: 'kamien',
+    passive: 'Wasi stojący do 2 pól od kamienia otrzymują 1 obrażenie mniej (od poziomu 6: 2 mniej).',
+  },
+};
+// Dane jednostki po stronie drużyny: bohater, oddział albo budowla.
+export const jednostka = (type) => HEROES[type] || ODDZIALY[type] || BUDOWLE[type];
 
 export const HERO_ORDER = ['berserker', 'tarczowniczka', 'volva', 'skald', 'jarl', 'mistrz-run', 'lowczyni', 'ulfhedinn'];
 export const NAMES = {
   nom: { berserker: 'Berserker', tarczowniczka: 'Tarczowniczka', volva: 'Völva', skald: 'Skald', jarl: 'Jarl', 'mistrz-run': 'Mistrz Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinn' },
   gen: { berserker: 'Berserkera', tarczowniczka: 'Tarczowniczki', volva: 'Völvy', skald: 'Skalda', jarl: 'Jarla', 'mistrz-run': 'Mistrza Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinna',
-    woje: 'wojów', tarczownicy: 'tarczowników', lucznicy: 'łuczników', oszczepnicy: 'oszczepników', berserkerzy: 'berserkerów' },
+    woje: 'wojów', tarczownicy: 'tarczowników', lucznicy: 'łuczników', oszczepnicy: 'oszczepników', berserkerzy: 'berserkerów',
+    'dlugi-dom': 'Długiego Domu', brama: 'bramy', wieza: 'wieży', kamien: 'kamienia' },
   fallen: { berserker: 'Poległ', tarczowniczka: 'Poległa', volva: 'Poległa', skald: 'Poległ', jarl: 'Poległ', 'mistrz-run': 'Poległ', lowczyni: 'Poległa', ulfhedinn: 'Poległ' },
 };
 
@@ -173,3 +195,82 @@ export const SCENARIO = {
   lose: 'Ostatni z drużyny pada w śnieg. Kurhan pochłania kolejnych zmarłych, a nad fiordem zapada długa noc. Saga tej drużyny kończy się tutaj.',
   loseTime: 'Mróz zamyka się nad polem bitwy, zanim Pan Kurhanu padł. Drużyna cofa się przez zamarznięty fiord, a za jej plecami umarli wciąż wychodzą z ziemi. Saga tej drużyny kończy się tutaj.',
 };
+
+// Obrona osady: trupy idą od lasu na wschodzie, drużyna broni Długiego Domu za palisadą.
+// Mapę składa silnik: '|' to kolumna palisady (wał albo śnieg zależnie od liczby odcinków w osadzie).
+export const OBRONA = {
+  id: 'obrona',
+  title: 'Obrona osady',
+  goal: 'Utrzymajcie Długi Dom do świtu: przetrwajcie 8 rund albo rozbijcie wszystkie trupy.',
+  maxRounds: 8,
+  frostStart: 99, // bez mrozu
+  frostDamage: 0,
+  winOnTime: true,
+  spawnOrigin: [10, 3],
+  wallCol: 4,
+  wallOrder: [2, 4, 1, 5, 0, 6], // kolejność pól wału od bramy na zewnątrz; rząd 3 to brama
+  gateRow: 3,
+  map: [
+    'L...|..L..L',
+    '.S..|...S..',
+    '....|.~....',
+    '....|......',
+    '.L..|..~.S.',
+    '....|.L....',
+    'LL..|..LL.L',
+  ],
+  structureSlots: { 'dlugi-dom': [1, 3], kamien: [1, 1], wieza: [[3, 1], [3, 5], [2, 4]] },
+  heroSlots: [[3, 3], [3, 2], [3, 4]],
+  troopSlots: [[2, 3], [2, 2], [2, 5], [1, 2], [1, 4]],
+  levels: {
+    'fala-1': {
+      name: 'Mała fala', desc: 'Trupy z lasu, także od skrzydeł. 14 przeciwników.',
+      bossHp: 16, summons: 0,
+      waves: {
+        1: [D(9, 2), D(9, 4), D(8, 0), L(10, 3)],
+        2: [D(8, 6), D(9, 3)],
+        3: [D(9, 1), D(9, 5), L(10, 2)],
+        4: [D(8, 0), D(8, 6)],
+        5: [D(9, 3), L(10, 4)],
+        6: [D(9, 2)],
+      },
+    },
+    'fala-2': {
+      name: 'Wielka fala', desc: 'Prawdziwy najazd z trzech stron. 20 przeciwników.',
+      bossHp: 18, summons: 0,
+      waves: {
+        1: [D(9, 2), D(9, 4), D(8, 0), D(8, 6), L(10, 3)],
+        2: [D(9, 3), L(10, 1)],
+        3: [D(9, 1), D(9, 5), D(8, 0)],
+        4: [L(10, 2), D(8, 6), D(9, 4)],
+        5: [D(9, 2), D(9, 3), L(10, 5)],
+        6: [D(8, 0), D(8, 6)],
+        7: [D(9, 3)],
+      },
+    },
+    'fala-3': {
+      name: 'Nawałnica umarłych', desc: 'Pan Kurhanu sam prowadzi umarłych. 24 przeciwników i wódz.',
+      bossHp: 20, summons: 1,
+      waves: {
+        1: [D(9, 2), D(9, 4), D(8, 0), D(8, 6), L(10, 3)],
+        2: [D(9, 3), L(10, 1), D(9, 5)],
+        3: [D(9, 1), D(8, 0), D(8, 6), L(10, 5)],
+        4: [{ type: 'pan-kurhanu', at: [9, 3] }, D(9, 2), D(9, 4)],
+        5: [D(8, 0), D(8, 6), L(10, 2)],
+        6: [D(9, 3), D(9, 1), D(9, 5)],
+        7: [D(8, 0), L(10, 4)],
+      },
+    },
+  },
+  intro: [
+    'Zwiadowcy wracają z lasu biegiem. Między drzewami coś idzie, równym krokiem, nie zważając na śnieg.',
+    'Kobiety zaganiają dzieci do Długiego Domu, kowal rozdaje to, co ma na kowadle. Bramy nikt nie otworzy przed świtem.',
+    'Umarli przyszli po żywych. Niech zastaną ich z bronią w ręku.',
+  ],
+  win: 'Szary świt wstaje nad palisadą. Ostatni trup leży w śniegu przed bramą, a z komina Długiego Domu znowu idzie dym. Osada przetrwała tę noc.',
+  lose: 'Ostatni z obrońców pada pod palisadą. Umarli wchodzą między domy i biorą, co zdołają unieść. Ci, którzy przeżyli, liczą straty do rana.',
+  loseHall: 'Długi Dom płonie. Ludzie uciekają w las, a umarli przeszukują spichlerze i magazyny. Rano zostaną zgliszcza do odbudowania i spisane straty.',
+  loseTime: '',
+};
+
+export const SCENARIOS = { kurhan: SCENARIO, obrona: OBRONA };

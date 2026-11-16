@@ -96,3 +96,63 @@ console.log('premie bitwy (pusta osada):', JSON.stringify(O.premieBitwy(o2)));
   ok(JSON.stringify(O.premiaPoziomu(10)) === '{"zycie":9,"atak":3}', 'premie poziomu 10');
   console.log('XP do poziomów 2..10:', Array.from({ length: 9 }, (_, i) => O.xpNaPoziom(i + 2)).join(', '));
 }
+
+// ---------- obrona osady (E4) ----------
+{
+  let t = 9_000_000;
+  const a = O.nowaOsada(t);
+  O.uplyw(a, t + 1);
+  ok(!a.najazd, 'przy DD1 nie ma najazdów');
+  a.budynki.find((b) => b.typ === 'dlugi_dom').poz = 2;
+  t += 1000; O.uplyw(a, t);
+  ok(a.najazd && a.najazd.nr === 1 && a.najazd.czas === t + 18 * H, 'DD2: pierwsza fala za 18 h');
+  ok(!O.moznaBronic(a, t) && O.moznaBronic(a, a.najazd.czas - 7 * H), 'bronić można na 8 h przed nadejściem');
+  ok(O.zacznijObrone(a, ['berserker', 'tarczowniczka', 'volva'], [], t, 'x').blad.includes('8 godzin'), 'za wcześnie na obronę');
+  // automatyczna obrona bez umocnień: porażka i straty
+  a.zasoby = { drewno: 1000, zelazo: 1000, zywnosc: 1000, srebro: 200 };
+  const sila = O.silaObrony(a, t);
+  ok(sila.razem === 18 && O.silaFali(a) === 28, `siła obrony 18 (3 bohaterów poz. 1), fali 28 (jest ${sila.razem}/${O.silaFali(a)})`);
+  const czas1 = a.najazd.czas;
+  const g = O.uplyw(a, czas1 + 1000);
+  const r = g.find((x) => x.najazd);
+  ok(r && r.najazd.tryb === 'auto' && r.najazd.wynik === 'lose', 'fala dotarła: automatyczna obrona przegrana');
+  ok(a.zasoby.drewno < 1000 && a.zasoby.drewno >= 640 && a.zasoby.srebro > 200 * 0.8, 'straty: część drewna, srebra mniej (skarbiec)');
+  ok(a.najazd.nr === 2 && a.najazd.czas >= czas1 + 24 * H + 12 * H, 'następna fala później, po porażce +12 h tarczy');
+  ok(a.raporty.length === 1 && a.raporty[0].nr === 1, 'raport zapisany');
+  // umocnienia: palisada 8 (4 pola wału = 8), brama 1 (4), wieża 1 (6) → 36 ≥ 30
+  for (let i = 0; i < 8; i++) a.budynki.push({ id: 200 + i, typ: 'palisada', x: i, y: 8, poz: 1, bufor: 0, bud: null });
+  a.budynki.push({ id: 300, typ: 'brama', x: 8, y: 8, poz: 1, bufor: 0, bud: null });
+  a.budynki.push({ id: 301, typ: 'wieza', x: 8, y: 7, poz: 1, bufor: 0, bud: null });
+  const u = O.umocnienia(a);
+  ok(u.palisada === 8 && u.brama === 1 && u.wieze.join() === '1' && u.dd === 2, 'umocnienia dla bitwy');
+  ok(O.silaObrony(a, t).razem === 36, 'siła z umocnieniami 36');
+  const czas2 = a.najazd.czas;
+  O.uplyw(a, czas2 + 1);
+  ok(a.raporty[0].nr === 2 && a.raporty[0].wynik === 'win' && a.slawa === 2, 'fala 2 odparta automatycznie, +2 sławy');
+  // obrona osobista
+  const czas3 = a.najazd.czas;
+  const st = O.zacznijObrone(a, ['berserker', 'tarczowniczka', 'volva'], [], czas3 - 3 * H, 'walka1');
+  ok(!st.blad && st.fala === 'fala-1' && st.obrona.brama === 1, 'obrona osobista rozpoczęta');
+  ok(O.terminNajazdu(a) === czas3 + 2 * H, 'rozpoczęta bitwa przesuwa automat o 2 h');
+  O.uplyw(a, czas3 + H); ok(a.najazd.nr === 3, 'w trakcie bitwy fala nie rozstrzyga się sama');
+  ok(O.zakonczObrone(a, 'walka1', true, [], [], czas3 - 3 * H + 1000).blad.includes('krótko'), 'za krótka bitwa odrzucona');
+  const kon = O.zakonczObrone(a, 'walka1', true, ['volva'], [], czas3 + H + 1000);
+  ok(!kon.blad && kon.raport.tryb === 'bitwa' && kon.raport.wynik === 'win' && kon.raport.lup.drewno > 0, 'wygrana obrona osobista: łup');
+  ok(a.bohaterowie.berserker.xp === 40 && O.wValhalli(a, 'volva', czas3 + H + 2000), 'doświadczenie i Valhalla po obronie');
+  ok(O.zakonczObrone(a, 'walka1', true, [], [], czas3 + H + 5000).blad.includes('rozstrzygnięty'), 'drugie rozliczenie odrzucone');
+  // porzucona bitwa: po 2 h rozstrzyga automat
+  const czas4 = a.najazd.czas;
+  O.zacznijObrone(a, ['berserker', 'tarczowniczka', 'skald'].filter((k) => a.bohaterowie[k]).concat(['volva']).slice(0, 3), [], czas4 - H, 'walka2');
+  a.bohaterowie.volva.valhalla = 0;
+  const st2 = O.zacznijObrone(a, ['berserker', 'tarczowniczka', 'volva'], [], czas4 - H, 'walka2');
+  ok(!st2.blad, 'druga obrona rozpoczęta');
+  const g2 = O.uplyw(a, czas4 + 2 * H + 10);
+  ok(g2.some((x) => x.najazd && x.najazd.tryb === 'auto') && a.najazd.nr === 5, 'porzucona bitwa: automat po 2 h');
+  // offline przez kilka dni: kolejne fale rozstrzygają się po kolei
+  const nr0 = a.najazd.nr;
+  O.uplyw(a, a.najazd.czas + 4 * 24 * H);
+  ok(a.najazd.nr >= nr0 + 2 && a.raporty.length <= 10, 'kilka fal pod nieobecność, raporty ograniczone do 10');
+  // DD4 → wielka fala
+  a.budynki.find((b) => b.typ === 'dlugi_dom').poz = 4;
+  ok(O.falaKlucz(a) === 'fala-2' && O.silaFali(a) >= 70, 'DD4: wielka fala');
+}

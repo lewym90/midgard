@@ -1,5 +1,5 @@
 // Midgard — praca bez internetu. Kod: najpierw sieć (szybkie aktualizacje), grafiki i czcionki: najpierw pamięć.
-const CACHE = 'midgard-v0.8.1';
+const CACHE = 'midgard-v0.9.0';
 const AUDIO_CACHE = 'midgard-audio-v1'; // osobno, żeby muzyka nie pobierała się od nowa przy każdej wersji
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',

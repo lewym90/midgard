@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as O from './osada-dane.js';
 
-const WERSJA = '1.3.0';
+const WERSJA = '1.4.0';
 const PORT = Number(process.env.PORT || 18900);
 const DANE = process.env.MIDGARD_DANE || './dane';
 const ORIGINS = (process.env.MIDGARD_ORIGINS || 'https://lewym90.github.io,http://localhost:8765,http://127.0.0.1:8765').split(',');
@@ -247,6 +247,23 @@ const trasy = {
   'POST /osada/werbuj': async (req) => { const b = await czytajJson(req); return zOsada(req, (o) => blad(O.werbuj(o, String(b.typ)))); },
   'POST /osada/szkol': async (req) => { const b = await czytajJson(req); return zOsada(req, (o, t) => blad(O.szkol(o, String(b.typ), t))); },
   'POST /osada/szkol/anuluj': (req) => zOsada(req, (o) => blad(O.anulujSzkolenie(o))),
+  'POST /osada/obrona/start': async (req) => {
+    const b = await czytajJson(req);
+    return zOsada(req, (o, t) => {
+      const id = crypto.randomBytes(8).toString('hex');
+      const p = O.zacznijObrone(o, Array.isArray(b.druzyna) ? b.druzyna.map(String) : [], Array.isArray(b.oddzialy) ? b.oddzialy.map(String) : [], t, id);
+      if (p.blad) throw new Blad(400, p.blad);
+      return { walka: id, premie: p.premie, rozwoj: p.rozwoj, oddzialy: p.oddzialy, obrona: p.obrona, fala: p.fala };
+    });
+  },
+  'POST /osada/obrona/koniec': async (req) => {
+    const b = await czytajJson(req);
+    return zOsada(req, (o, t) => {
+      const r = O.zakonczObrone(o, String(b.id), b.wynik === 'win', Array.isArray(b.polegli) ? b.polegli.map(String) : [], Array.isArray(b.ocaleli) ? b.ocaleli.map(String) : [], t);
+      if (r.blad) throw new Blad(400, r.blad);
+      return r;
+    });
+  },
   'POST /osada/wyprawa/start': async (req) => {
     const b = await czytajJson(req);
     return zOsada(req, (o, t) => {
