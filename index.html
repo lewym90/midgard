@@ -27,7 +27,7 @@
       <div class="login-box iron">
         <div class="tabs">
           <button class="tab on" data-tab="log">Logowanie</button>
-          <button class="tab" data-tab="rej">Mam zaproszenie</button>
+          <button class="tab" data-tab="rej">Nowe konto</button>
         </div>
         <form id="f-log" class="form" autocomplete="on">
           <label>Imię gracza<input name="nick" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
@@ -35,14 +35,14 @@
           <button class="btn btn-gold" type="submit">Wejdź do Midgardu</button>
         </form>
         <form id="f-rej" class="form" autocomplete="on" hidden>
-          <label>Kod zaproszenia<input name="kod" placeholder="MID-XXXX-XXXX" autocapitalize="characters" spellcheck="false" required></label>
-          <label>Imię gracza<input name="nick" autocomplete="username" spellcheck="false" maxlength="20" required></label>
-          <label>Hasło (co najmniej 6 znaków)<input name="haslo" type="password" autocomplete="new-password" required></label>
+          <label>Hasło do gry (od osoby, która dała Ci link)<input name="hg" autocapitalize="none" autocomplete="off" spellcheck="false" required></label>
+          <label>Twoje imię w grze<input name="nick" autocomplete="username" spellcheck="false" maxlength="20" required></label>
+          <label>Twoje hasło (co najmniej 6 znaków)<input name="haslo" type="password" autocomplete="new-password" required></label>
           <label>Powtórz hasło<input name="haslo2" type="password" autocomplete="new-password" required></label>
           <button class="btn btn-gold" type="submit">Załóż konto</button>
         </form>
         <p class="form-err" id="login-err"></p>
-        <p class="login-note">Jedno konto działa na wszystkich Twoich urządzeniach. Na telefonie, tablecie i laptopie logujesz się tym samym imieniem i hasłem, a Twoja gra jest wszędzie ta sama.</p>
+        <p class="login-note">Konto zakładasz raz. Na każdym kolejnym urządzeniu (telefon, tablet, laptop) logujesz się już tylko swoim imieniem i hasłem, a Twoja gra jest wszędzie ta sama.</p>
         <button class="link-btn" id="btn-guest" hidden>Graj bez konta, tylko na tym urządzeniu</button>
       </div>
     </div>

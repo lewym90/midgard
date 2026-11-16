@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const WERSJA = '1.0.0';
+const WERSJA = '1.1.0';
 const PORT = Number(process.env.PORT || 18900);
 const DANE = process.env.MIDGARD_DANE || './dane';
 const ORIGINS = (process.env.MIDGARD_ORIGINS || 'https://lewym90.github.io,http://localhost:8765,http://127.0.0.1:8765').split(',');
@@ -27,6 +27,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS zaproszenia (
     kod TEXT PRIMARY KEY, admin INTEGER NOT NULL DEFAULT 0, utworzone INTEGER NOT NULL, przez INTEGER,
     uzyte_przez INTEGER, uzyte INTEGER, opis TEXT);
+  CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS stany (
     gracz_id INTEGER PRIMARY KEY REFERENCES gracze(id) ON DELETE CASCADE,
     rev INTEGER NOT NULL, dane TEXT NOT NULL, zmieniony INTEGER NOT NULL, urzadzenie TEXT);
@@ -64,19 +65,17 @@ function noweHaslo() {
   return s;
 }
 
-// Pierwsze uruchomienie: kod zaproszenia dla administratora (właściciela gry).
-function kodAdmina() {
-  const jestAdmin = db.prepare('SELECT 1 FROM gracze WHERE admin = 1').get();
-  if (jestAdmin) { try { fs.rmSync(path.join(DANE, 'kod-administratora.txt')); } catch (e) {} return null; }
-  let z = db.prepare('SELECT kod FROM zaproszenia WHERE admin = 1 AND uzyte IS NULL').get();
-  if (!z) {
-    z = { kod: kod() };
-    db.prepare('INSERT INTO zaproszenia (kod, admin, utworzone, opis) VALUES (?, 1, ?, ?)').run(z.kod, teraz(), 'administrator');
-  }
-  fs.writeFileSync(path.join(DANE, 'kod-administratora.txt'), z.kod + '\n', { mode: 0o600 });
-  return z.kod;
+// Hasło do gry: jedno, wspólne, ustawia je administrator. Bez niego nie da się założyć konta.
+// Pierwsze konto założone na serwerze zostaje kontem administratora.
+const plikHasla = path.join(DANE, 'haslo-gry.txt');
+function hasloGry() { const r = db.prepare("SELECT wartosc FROM ustawienia WHERE klucz = 'haslo_gry'").get(); return r ? r.wartosc : null; }
+function ustawHasloGry(h) {
+  db.prepare("INSERT INTO ustawienia (klucz, wartosc) VALUES ('haslo_gry', ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc").run(h);
+  fs.writeFileSync(plikHasla, h + '\n', { mode: 0o600 });
 }
-kodAdmina();
+if (!hasloGry()) ustawHasloGry(kod().slice(4)); // np. Q7KD-M2PX — administrator zmieni je na własne
+else fs.writeFileSync(plikHasla, hasloGry() + '\n', { mode: 0o600 });
+const zgodne = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
 // ---------- ochrona przed zgadywaniem haseł ----------
 const proby = new Map(); // klucz → [czasy nieudanych prób]
@@ -154,24 +153,17 @@ const trasy = {
     const b = await czytajJson(req);
     const k = 'rej:' + ip(req);
     if (zablokowany(k)) throw new Blad(429, 'Za dużo prób. Spróbuj za kwadrans.');
-    const kodZ = String(b.zaproszenie || '').trim().toUpperCase();
     const nick = String(b.nick || '').trim().replace(/\s+/g, ' ');
     const haslo = String(b.haslo || '');
     if (!NICK.test(nick)) throw new Blad(400, 'Imię gracza: 3–20 znaków (litery, cyfry, spacja, _ lub -).');
     if (haslo.length < 6 || haslo.length > 200) throw new Blad(400, 'Hasło musi mieć co najmniej 6 znaków.');
-    const z = db.prepare('SELECT * FROM zaproszenia WHERE kod = ?').get(kodZ);
-    if (!z || z.uzyte) { nieudana(k); throw new Blad(400, 'Ten kod zaproszenia jest nieprawidłowy albo został już użyty.'); }
+    if (!zgodne(b.haslo_gry, hasloGry())) { nieudana(k); throw new Blad(400, 'Złe hasło do gry. Zapytaj o nie tego, kto dał Ci link.'); }
     if (db.prepare('SELECT 1 FROM gracze WHERE nick = ?').get(nick)) throw new Blad(409, 'To imię jest już zajęte.');
     const t = teraz();
-    db.exec('BEGIN');
-    try {
-      const r = db.prepare('INSERT INTO gracze (nick, haslo, admin, utworzony, ostatnio) VALUES (?, ?, ?, ?, ?)').run(nick, hashHasla(haslo), z.admin ? 1 : 0, t, t);
-      db.prepare('UPDATE zaproszenia SET uzyte_przez = ?, uzyte = ? WHERE kod = ?').run(r.lastInsertRowid, t, kodZ);
-      db.exec('COMMIT');
-      const g = db.prepare('SELECT * FROM gracze WHERE id = ?').get(r.lastInsertRowid);
-      if (g.admin) kodAdmina();
-      return { token: nowaSesja(g.id, b.urzadzenie), gracz: opisGracza(g) };
-    } catch (e) { db.exec('ROLLBACK'); throw e; }
+    const pierwszy = !db.prepare('SELECT 1 FROM gracze LIMIT 1').get();
+    const r = db.prepare('INSERT INTO gracze (nick, haslo, admin, utworzony, ostatnio) VALUES (?, ?, ?, ?, ?)').run(nick, hashHasla(haslo), pierwszy ? 1 : 0, t, t);
+    const g = db.prepare('SELECT * FROM gracze WHERE id = ?').get(r.lastInsertRowid);
+    return { token: nowaSesja(g.id, b.urzadzenie), gracz: opisGracza(g) };
   },
 
   'POST /logowanie': async (req) => {
@@ -231,21 +223,14 @@ const trasy = {
   },
 
   // ---------- administrator ----------
-  'POST /admin/zaproszenia': async (req) => {
-    const s = admin(req);
+  'GET /admin/haslo-gry': (req) => { admin(req); return { haslo: hasloGry() }; },
+  'POST /admin/haslo-gry': async (req) => {
+    admin(req);
     const b = await czytajJson(req);
-    const k = kod();
-    db.prepare('INSERT INTO zaproszenia (kod, admin, utworzone, przez, opis) VALUES (?, 0, ?, ?, ?)').run(k, teraz(), s.id, String(b.opis || '').slice(0, 60));
-    return { kod: k };
-  },
-  'GET /admin/zaproszenia': (req) => {
-    admin(req);
-    return { zaproszenia: db.prepare(`SELECT z.kod, z.opis, z.utworzone, z.uzyte, g.nick AS gracz FROM zaproszenia z LEFT JOIN gracze g ON g.id = z.uzyte_przez WHERE z.admin = 0 ORDER BY z.utworzone DESC LIMIT 100`).all() };
-  },
-  'DELETE /admin/zaproszenia': (req, arg) => {
-    admin(req);
-    db.prepare('DELETE FROM zaproszenia WHERE kod = ? AND uzyte IS NULL AND admin = 0').run(String(arg));
-    return { ok: true };
+    const h = String(b.haslo || '').trim();
+    if (h.length < 4 || h.length > 60) throw new Blad(400, 'Hasło do gry: od 4 do 60 znaków.');
+    ustawHasloGry(h);
+    return { haslo: h };
   },
   'GET /admin/gracze': (req) => {
     admin(req);

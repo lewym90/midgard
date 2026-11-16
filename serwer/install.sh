@@ -91,11 +91,15 @@ echo
 if curl -fsS --max-time 20 "https://$HOST/midgard-api/zdrowie" -o /tmp/midgard-zdrowie.json; then
   echo "Status: OK  $(cat /tmp/midgard-zdrowie.json)"
   echo "Adres serwera gry: https://$HOST/midgard-api"
-  if [ -f /var/lib/midgard/kod-administratora.txt ]; then
+  if [ -f /var/lib/midgard/haslo-gry.txt ]; then
     echo
     echo "=============================================="
-    echo "  KOD ADMINISTRATORA: $(cat /var/lib/midgard/kod-administratora.txt)"
-    echo "  Wpisz go w grze: Mam zaproszenie."
+    echo "  HASŁO DO GRY: $(cat /var/lib/midgard/haslo-gry.txt)"
+    if grep -q '"gracze":0' /tmp/midgard-zdrowie.json; then
+      echo "  Załóż konto jako PIERWSZY: pierwsze konto"
+      echo "  zostaje kontem administratora."
+    fi
+    echo "  Hasło zmienisz w grze: Konto, Hasło do gry."
     echo "=============================================="
   fi
 else

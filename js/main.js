@@ -8,7 +8,7 @@ import { audio } from './audio.js';
 import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);

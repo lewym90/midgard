@@ -77,8 +77,8 @@ class Konto {
     return j.gracz;
   }
 
-  async zarejestruj(zaproszenie, nick, haslo) {
-    const j = await this.api('POST', '/rejestracja', { zaproszenie, nick, haslo, urzadzenie: nazwaUrzadzenia() }, { bezTokenu: true });
+  async zarejestruj(hasloGry, nick, haslo) {
+    const j = await this.api('POST', '/rejestracja', { haslo_gry: hasloGry, nick, haslo, urzadzenie: nazwaUrzadzenia() }, { bezTokenu: true });
     this._ustaw(j.token, j.gracz);
     await this.pobierz();
     return j.gracz;
@@ -100,9 +100,8 @@ class Konto {
   ja() { return this.api('GET', '/ja').then((j) => { this.gracz = j.gracz; pisz(K_GRACZ, j.gracz); return j; }); }
   usunUrzadzenie(id) { return this.api('DELETE', '/urzadzenia/' + id); }
   zmienHaslo(stare, nowe) { return this.api('POST', '/haslo', { stare, nowe }); }
-  adminZaproszenie(opis) { return this.api('POST', '/admin/zaproszenia', { opis }); }
-  adminZaproszenia() { return this.api('GET', '/admin/zaproszenia'); }
-  adminUsunZaproszenie(k) { return this.api('DELETE', '/admin/zaproszenia/' + encodeURIComponent(k)); }
+  adminHasloGry() { return this.api('GET', '/admin/haslo-gry'); }
+  adminUstawHasloGry(haslo) { return this.api('POST', '/admin/haslo-gry', { haslo }); }
   adminGracze() { return this.api('GET', '/admin/gracze'); }
   adminResetHasla(nick) { return this.api('POST', '/admin/reset-hasla', { nick }); }
 

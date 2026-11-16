@@ -11,7 +11,7 @@ Kooperacyjna cyfrowa planszówka w świecie nordyckich mitów. Aplikacja PWA: dz
 - Muzyka: hymn w menu, muzyka bitwy w 3 poziomach napięcia (przenikanie wg sytuacji na planszy). Pliki w `assets/audio/`, lista dostępnych w `assets/audio/lista.json`, oryginały w `assets/zrodla/audio/`.
 
 ## Konta i serwer
-- Każdy gracz ma konto (imię + hasło) działające na wszystkich jego urządzeniach. Nowe konta tylko z kodem zaproszenia od administratora.
+- Każdy gracz ma konto (imię + hasło) działające na wszystkich jego urządzeniach. Nowe konto wymaga wspólnego hasła do gry (ustawia je administrator w panelu Konto). Pierwsze konto na serwerze zostaje kontem administratora.
 - Serwer: `serwer/midgard.mjs` (Node 24, bez bibliotek, SQLite). Instalacja/aktualizacja na serwerze (jako root):
   `curl -fsSL https://raw.githubusercontent.com/lewym90/midgard/main/serwer/install.sh | bash`
 - Adres API: https://188-68-247-201.sslip.io/midgard-api

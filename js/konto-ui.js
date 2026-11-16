@@ -1,4 +1,4 @@
-// Ekran logowania i panel konta (urządzenia, hasło, zaproszenia, gracze).
+// Ekran logowania i panel konta (urządzenia, hasło, hasło do gry, gracze).
 import { konto } from './konto.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,7 +53,7 @@ export function initLogin(poZalogowaniu) {
     if (f.haslo.value !== f.haslo2.value) { err.textContent = 'Hasła nie są takie same.'; return; }
     zajety(f, true);
     try {
-      await konto.zarejestruj(f.kod.value.trim(), f.nick.value.trim(), f.haslo.value);
+      await konto.zarejestruj(f.hg.value.trim(), f.nick.value.trim(), f.haslo.value);
       f.reset(); poZalogowaniu(true);
     } catch (e) { pokazBlad(e); }
     finally { zajety(f, false); }
@@ -97,14 +97,16 @@ export async function otworzKonto(poWylogowaniu) {
     </div>
     ${g.admin ? `
     <div class="k-sec">
-      <h3>Zaproś gracza</h3>
-      <p>Każdy kod działa raz i tworzy jedno konto. Wpisz, dla kogo jest, żeby potem wiedzieć, kto z niego skorzystał.</p>
+      <h3>Hasło do gry</h3>
+      <p>Podaj je znajomym razem z linkiem. Wpisują je tylko raz, przy zakładaniu konta. Jeśli je zmienisz, założone konta działają dalej.</p>
+      <div class="k-code" id="k-hg">…</div>
       <div class="k-inline">
-        <input class="field" id="k-opis" placeholder="Dla kogo (np. Marek)" maxlength="60">
-        <button class="btn btn-small btn-gold" id="k-zapros">Utwórz kod</button>
+        <input class="field" id="k-hg-nowe" placeholder="Nowe hasło do gry" maxlength="60" autocapitalize="none" spellcheck="false">
+        <button class="btn btn-small" id="k-hg-zmien">Zmień</button>
       </div>
-      <div id="k-nowy"></div>
-      <div id="k-zapr"></div>
+      <div class="k-inline" style="justify-content:center;margin-top:.6rem">
+        <button class="btn btn-small btn-gold" id="k-kopiuj">Kopiuj zaproszenie</button>${navigator.share ? '<button class="btn btn-small btn-gold" id="k-wyslij">Wyślij zaproszenie…</button>' : ''}
+      </div>
     </div>
     <div class="k-sec">
       <h3>Gracze</h3>
@@ -125,25 +127,23 @@ export async function otworzKonto(poWylogowaniu) {
 
   if (g.admin) {
     const linkGry = location.origin + location.pathname;
-    const pokazKod = (k, opis) => {
-      const tekst = `Zapraszam Cię do Midgardu${opis ? ', ' + opis : ''}!\nOtwórz ${linkGry}\nwybierz „Mam zaproszenie” i wpisz kod: ${k}`;
-      $('k-nowy').innerHTML = `<div class="k-code">${esc(k)}</div>
-        <div class="k-inline" style="justify-content:center"><button class="btn btn-small" id="k-kopiuj">Kopiuj zaproszenie</button>${navigator.share ? '<button class="btn btn-small" id="k-wyslij">Wyślij…</button>' : ''}</div>`;
-      $('k-kopiuj').onclick = async () => { try { await navigator.clipboard.writeText(tekst); toast('Skopiowano zaproszenie.'); } catch (e) { toast('Nie udało się skopiować. Przepisz kod ręcznie.'); } };
-      if (navigator.share) $('k-wyslij').onclick = () => navigator.share({ title: 'Midgard', text: tekst }).catch(() => {});
+    let hg = '';
+    const tekst = () => `Zapraszam Cię do Midgardu!\n1. Otwórz ${linkGry}\n2. Wybierz „Nowe konto”.\n3. Hasło do gry: ${hg}\n4. Wymyśl swoje imię w grze i swoje hasło.\nPotem na każdym urządzeniu logujesz się już tylko swoim imieniem i hasłem.`;
+    const pokazHg = (h) => { hg = h; $('k-hg').textContent = h; };
+    konto.adminHasloGry().then((r) => pokazHg(r.haslo)).catch((e) => toast(e.message));
+    $('k-hg-zmien').onclick = async () => {
+      try { const r = await konto.adminUstawHasloGry($('k-hg-nowe').value); pokazHg(r.haslo); $('k-hg-nowe').value = ''; toast('Hasło do gry zmienione.'); }
+      catch (e) { toast(e.message); }
     };
+    $('k-kopiuj').onclick = async () => { try { await navigator.clipboard.writeText(tekst()); toast('Skopiowano zaproszenie z linkiem i hasłem do gry.'); } catch (e) { toast('Nie udało się skopiować.'); } };
+    if (navigator.share) $('k-wyslij').onclick = () => navigator.share({ title: 'Midgard', text: tekst() }).catch(() => {});
     const listy = async () => {
       try {
-        const [z, gr] = await Promise.all([konto.adminZaproszenia(), konto.adminGracze()]);
-        $('k-zapr').innerHTML = z.zaproszenia.length ? z.zaproszenia.map((x) => `
-          <div class="k-row"><div><b>${esc(x.kod)}</b>${x.opis ? ` · ${esc(x.opis)}` : ''}
-            <div class="meta">${x.uzyte ? `użyty przez ${esc(x.gracz)}, ${kiedy(x.uzyte)}` : `czeka od ${kiedy(x.utworzone)}`}</div></div>
-            ${x.uzyte ? '' : `<button class="btn btn-small" data-zdel="${esc(x.kod)}">Usuń</button>`}</div>`).join('') : '';
+        const gr = await konto.adminGracze();
         $('k-gracze').innerHTML = gr.gracze.map((x) => `
           <div class="k-row"><div><b>${esc(x.nick)}</b>${x.admin ? '<span class="badge">administrator</span>' : ''}
             <div class="meta">ostatnio: ${kiedy(x.ostatnio)} · urządzeń: ${x.urzadzenia}</div></div>
             ${x.admin ? '' : `<button class="btn btn-small" data-reset="${esc(x.nick)}">Nowe hasło</button>`}</div>`).join('');
-        $('k-zapr').querySelectorAll('[data-zdel]').forEach((b) => { b.onclick = async () => { await konto.adminUsunZaproszenie(b.dataset.zdel).catch((e) => toast(e.message)); listy(); }; });
         $('k-gracze').querySelectorAll('[data-reset]').forEach((b) => {
           b.onclick = async () => {
             try { const r = await konto.adminResetHasla(b.dataset.reset); b.outerHTML = `<span class="k-code" style="font-size:1rem;margin:0;padding:.3rem .6rem">${esc(r.haslo)}</span>`; }
@@ -151,10 +151,6 @@ export async function otworzKonto(poWylogowaniu) {
           };
         });
       } catch (e) { $('k-gracze').innerHTML = `<p>${esc(e.message)}</p>`; }
-    };
-    $('k-zapros').onclick = async () => {
-      try { const opis = $('k-opis').value.trim(); const r = await konto.adminZaproszenie(opis); pokazKod(r.kod, opis); $('k-opis').value = ''; listy(); }
-      catch (e) { toast(e.message); }
     };
     listy();
   }
