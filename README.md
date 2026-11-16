@@ -4,11 +4,11 @@ Kooperacyjna cyfrowa planszówka w świecie nordyckich mitów. Aplikacja PWA: dz
 
 **Zagraj:** https://lewym90.github.io/midgard/
 
-## Stan (wersja 0.2.0)
+## Stan (wersja 0.3.0)
 - Pierwsza bitwa: *Kurhan nad fiordem*. Drużyna 3 z 8 bohaterów, trzy poziomy trudności (Wędrowiec, Wojownik, Ragnarök).
 - Nici Norn (wrogowie pokazują zamiary), kości runiczne, narada z cofaniem ruchów, mur tarcz, mróz, Hamingja.
 - Zapis po każdym ruchu (pamięć urządzenia).
-- Dźwięk: mikser gotowy, pliki dojdą w `assets/audio/` (lista dostępnych plików w `assets/audio/lista.json`).
+- Muzyka: hymn w menu, muzyka bitwy w 3 poziomach napięcia (przenikanie wg sytuacji na planszy). Pliki w `assets/audio/`, lista dostępnych w `assets/audio/lista.json`, oryginały w `assets/zrodla/audio/`.
 
 ## Struktura
 - `index.html`, `css/style.css` to wygląd.

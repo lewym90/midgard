@@ -1,5 +1,6 @@
 // Midgard — praca bez internetu. Kod: najpierw sieć (szybkie aktualizacje), grafiki i czcionki: najpierw pamięć.
-const CACHE = 'midgard-v0.2.1';
+const CACHE = 'midgard-v0.3.0';
+const AUDIO_CACHE = 'midgard-audio-v1'; // osobno, żeby muzyka nie pobierała się od nowa przy każdej wersji
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/engine.js', 'js/board.js', 'js/ui.js', 'js/data.js', 'js/hex.js', 'js/runes.js', 'js/audio.js',
@@ -18,7 +19,7 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== AUDIO_CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', (e) => {
@@ -26,7 +27,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
-  const isAsset = url.pathname.includes('/assets/');
+  if (url.pathname.includes('/assets/audio/') && url.pathname.endsWith('.mp3')) { e.respondWith(audioResponse(req)); return; }
+  const isAsset = url.pathname.includes('/assets/') && !url.pathname.endsWith('lista.json');
   if (isAsset) {
     e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
@@ -39,3 +41,28 @@ self.addEventListener('fetch', (e) => {
     }).catch(() => caches.match(req).then((hit) => hit || caches.match('index.html'))));
   }
 });
+
+// Muzyka: z pamięci, z obsługą zapytań o fragment pliku (Safari odtwarza audio kawałkami).
+async function audioResponse(req) {
+  const cache = await caches.open(AUDIO_CACHE);
+  const plain = new Request(req.url);
+  let res = await cache.match(plain);
+  if (!res) {
+    try { res = await fetch(plain); } catch (e) { return Response.error(); }
+    if (res.ok) await cache.put(plain, res.clone());
+  }
+  const range = req.headers.get('range');
+  if (!range || !res.ok) return res;
+  const buf = await res.arrayBuffer();
+  const size = buf.byteLength;
+  const m = /bytes=(\d*)-(\d*)/.exec(range) || [];
+  let start = m[1] ? Number(m[1]) : 0;
+  let end = m[2] ? Number(m[2]) : size - 1;
+  if (!m[1] && m[2]) { start = Math.max(0, size - Number(m[2])); end = size - 1; }
+  end = Math.min(end, size - 1);
+  if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  return new Response(buf.slice(start, end + 1), {
+    status: 206,
+    headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes' },
+  });
+}

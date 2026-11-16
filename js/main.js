@@ -3,10 +3,10 @@ import * as E from './engine.js';
 import { Board } from './board.js';
 import * as UI from './ui.js';
 import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES } from './data.js';
-import { key } from './hex.js';
+import { key, distance } from './hex.js';
 import { audio } from './audio.js';
 
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -48,6 +48,27 @@ function loadImages() {
 function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id === id);
   if (id === 'screen-battle' && board) requestAnimationFrame(() => board.resize());
+  if (id === 'screen-battle') updateMusic(); else audio.music('hymn');
+}
+
+// ---------- muzyka bitwy: poziom napięcia z sytuacji na planszy ----------
+function battleTrack() {
+  if (!state || state.result) return null;
+  const heroes = E.livingHeroes(state), foes = E.livingEnemies(state);
+  if (foes.some((e) => e.type === 'pan-kurhanu')) return 'boss';
+  const low = heroes.some((h) => h.hp / h.maxHp <= 0.34);
+  const engaged = foes.filter((e) => heroes.some((h) => distance(h.c, h.r, e.c, e.r) <= 1)).length;
+  if (low || engaged >= 3) return 'bitwa-3';
+  if (foes.some((e) => heroes.some((h) => distance(h.c, h.r, e.c, e.r) <= 3))) return 'bitwa-2';
+  return 'bitwa-1';
+}
+function updateMusic() { if ($('screen-battle').classList.contains('active')) audio.music(battleTrack()); }
+
+function refreshSound() {
+  const on = audio.prefs.music || audio.prefs.sfx;
+  for (const b of document.querySelectorAll('.sound-btn')) b.classList.toggle('off', !on);
+  $('m-music').textContent = `Muzyka: ${audio.prefs.music ? 'włączona' : 'wyłączona'}`;
+  $('m-sfx').textContent = `Efekty: ${audio.prefs.sfx ? 'włączone' : 'wyłączone'}`;
 }
 function overlay(id, on = true) { $(id).hidden = !on; }
 
@@ -171,6 +192,7 @@ async function play(events) {
   if (newRound && !state.result) { audio.play('runy'); render(true); }
   else render();
   store.save();
+  updateMusic();
   if (state.result) setTimeout(showEnd, 600);
 }
 
@@ -346,6 +368,7 @@ function doReroll() {
 
 function showEnd() {
   const win = state.result === 'win';
+  audio.music(win ? 'zwyciestwo' : 'porazka');
   $('end-title').textContent = win ? 'Zwycięstwo' : 'Klęska';
   const alive = E.livingHeroes(state).length;
   $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów. Poziom: ${E.level(state).name}.</p>`;
@@ -416,6 +439,16 @@ async function boot() {
   new ResizeObserver(() => { board.resize(); }).observe($('board-wrap'));
   if (document.fonts) document.fonts.ready.then(() => board.resize());
 
+  // pierwsze dotknięcie gdziekolwiek odblokowuje dźwięk (wymóg iOS)
+  document.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+  audio.music('hymn');
+  refreshSound();
+  for (const b of document.querySelectorAll('.sound-btn')) b.onclick = () => {
+    const on = !(audio.prefs.music || audio.prefs.sfx);
+    audio.setPref('music', on); audio.setPref('sfx', on); refreshSound();
+  };
+  $('m-music').onclick = () => { audio.setPref('music', !audio.prefs.music); refreshSound(); };
+  $('m-sfx').onclick = () => { audio.setPref('sfx', !audio.prefs.sfx); refreshSound(); };
   $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; openTeam(); };
   $('btn-team-back').onclick = () => show('screen-start');
   $('btn-team-go').onclick = () => { if (pick.team.length === 3) newBattle(); };
@@ -439,7 +472,7 @@ async function boot() {
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') doUndo();
   });
 
-  window.midgard = { state: () => state, view: () => view, board, busy: () => busy, render: () => { view = E.clone(state); render(); } };
+  window.midgard = { audio, state: () => state, view: () => view, board, busy: () => busy, render: () => { view = E.clone(state); render(); } };
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
