@@ -93,6 +93,40 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .start-version { margin: 0; font-size: 0.7rem; color: var(--ink-faint); letter-spacing: 0.1em; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(1rem); } }
 
+/* ---------- logowanie i konto ---------- */
+#screen-login { overflow-y: auto; }
+.login-wrap { position: relative; z-index: 2; min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: calc(1.5rem + var(--safe-t)) 1rem calc(1.5rem + var(--safe-b)); }
+.login-logo { width: min(70vw, 30rem); filter: drop-shadow(0 0.6rem 1.4rem rgba(0,0,0,0.85)); }
+.login-box { width: min(26rem, 100%); padding: 1.2rem 1.3rem 1.3rem; border-radius: 0.6rem; }
+.tabs { display: flex; gap: 0.3rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(212,166,74,0.25); }
+.tab { flex: 1; padding: 0.6rem 0.4rem; background: none; border: none; border-bottom: 2px solid transparent; font-family: var(--display); font-weight: 700; letter-spacing: 0.06em; font-size: 0.82rem; color: var(--ink-faint); text-transform: uppercase; }
+.tab.on { color: var(--gold-hi); border-bottom-color: var(--gold); }
+.form { display: flex; flex-direction: column; gap: 0.75rem; }
+.form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.82rem; color: var(--ink-dim); }
+.form input, .field { font: inherit; font-size: max(16px, 1rem); color: var(--ink); background: rgba(0,0,0,0.55); border: 1px solid rgba(212,166,74,0.3); border-radius: 0.35rem; padding: 0.7rem 0.8rem; outline: none; -webkit-user-select: text; user-select: text; width: 100%; }
+.form input:focus, .field:focus { border-color: var(--gold-hi); box-shadow: 0 0 0 2px rgba(242,211,138,0.2); }
+.form .btn { margin-top: 0.3rem; }
+.form-err { min-height: 1.2em; margin: 0.7rem 0 0; color: #ef7a64; font-size: 0.86rem; text-align: center; }
+.login-note { margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--ink-faint); line-height: 1.35; text-align: center; }
+.link-btn { display: block; margin: 0.8rem auto 0; background: none; border: none; color: var(--gold); text-decoration: underline; font-size: 0.85rem; }
+.konto-chip { position: absolute; z-index: 3; top: calc(1rem + var(--safe-t)); left: calc(1rem + var(--safe-l)); display: flex; flex-direction: column; align-items: flex-start; gap: 0.05rem; padding: 0.45rem 0.8rem; border-radius: 0.4rem; border: 1px solid var(--line); background: rgba(0,0,0,0.55); text-align: left; }
+.konto-nick { font-family: var(--display); font-weight: 700; color: var(--gold-hi); letter-spacing: 0.05em; font-size: 0.9rem; }
+.konto-chip small { font-size: 0.7rem; color: var(--ink-faint); }
+.konto-chip small.ok { color: #9fc77a; }
+.konto-chip small.warn { color: #e8b45a; }
+.k-sec { margin: 1rem 0 0; padding-top: 0.9rem; border-top: 1px solid rgba(212,166,74,0.2); }
+.k-sec h3 { margin: 0 0 0.5rem; font-family: var(--display); font-size: 0.95rem; letter-spacing: 0.06em; color: var(--gold-hi); }
+.k-sec p { margin: 0.3rem 0; color: var(--ink-dim); font-size: 0.88rem; line-height: 1.4; }
+.k-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.88rem; }
+.k-row .meta { color: var(--ink-faint); font-size: 0.78rem; }
+.k-row b { color: var(--ink); }
+.k-inline { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.k-inline .field { flex: 1; min-width: 10rem; }
+.k-code { font-family: var(--display); font-weight: 700; font-size: 1.4rem; letter-spacing: 0.12em; color: var(--gold-hi); text-align: center; padding: 0.7rem; border: 1px dashed var(--gold); border-radius: 0.4rem; margin: 0.6rem 0; -webkit-user-select: all; user-select: all; }
+.badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 0.3rem; font-size: 0.7rem; font-weight: 700; background: rgba(212,166,74,0.2); color: var(--gold-hi); margin-left: 0.4rem; vertical-align: middle; }
+.toast { position: fixed; left: 50%; bottom: calc(1.2rem + var(--safe-b)); transform: translate(-50%, 1rem); z-index: 80; max-width: min(34rem, 92vw); padding: 0.7rem 1.1rem; border-radius: 0.45rem; background: rgba(12,10,8,0.95); border: 1px solid var(--line); color: var(--ink); font-size: 0.9rem; box-shadow: 0 0.6rem 1.6rem rgba(0,0,0,0.7); opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.3s; text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
 /* ---------- wybór drużyny ---------- */
 #screen-team.active { display: block; overflow-y: auto; background: radial-gradient(ellipse at 50% 0%, rgba(0,0,0,0.2), rgba(0,0,0,0.85) 75%), url(../assets/img/tlo/stol.webp) center/cover; }
 .team-wrap { max-width: 92rem; margin: 0 auto; padding: calc(1rem + var(--safe-t)) calc(1rem + var(--safe-r)) calc(1rem + var(--safe-b)) calc(1rem + var(--safe-l)); display: flex; flex-direction: column; gap: 0.9rem; min-height: 100%; }

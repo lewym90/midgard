@@ -1,9 +1,9 @@
 // Midgard — praca bez internetu. Kod: najpierw sieć (szybkie aktualizacje), grafiki i czcionki: najpierw pamięć.
-const CACHE = 'midgard-v0.3.0';
+const CACHE = 'midgard-v0.4.0';
 const AUDIO_CACHE = 'midgard-audio-v1'; // osobno, żeby muzyka nie pobierała się od nowa przy każdej wersji
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
-  'js/main.js', 'js/engine.js', 'js/board.js', 'js/ui.js', 'js/data.js', 'js/hex.js', 'js/runes.js', 'js/audio.js',
+  'js/main.js', 'js/konto.js', 'js/konto-ui.js', 'js/engine.js', 'js/board.js', 'js/ui.js', 'js/data.js', 'js/hex.js', 'js/runes.js', 'js/audio.js',
   'assets/img/tlo/key-art.webp', 'assets/img/tlo/stol.webp', 'assets/img/marka/logo.webp',
   'assets/img/teren/snieg.webp', 'assets/img/teren/las.webp', 'assets/img/teren/lod.webp', 'assets/img/teren/bagno.webp', 'assets/img/teren/skaly.webp', 'assets/img/teren/kurhan.webp',
   'assets/img/material/dab.webp', 'assets/img/material/zelazo.webp', 'assets/img/material/kosc.webp', 'assets/img/material/pergamin.webp', 'assets/img/material/zloto.webp',

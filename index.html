@@ -18,9 +18,40 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- EKRAN STARTOWY -->
-  <section id="screen-start" class="screen active">
+  <!-- LOGOWANIE -->
+  <section id="screen-login" class="screen">
     <div class="start-art"></div>
+    <div class="start-shade"></div>
+    <div class="login-wrap">
+      <img class="login-logo" src="assets/img/marka/logo.webp" alt="Midgard">
+      <div class="login-box iron">
+        <div class="tabs">
+          <button class="tab on" data-tab="log">Logowanie</button>
+          <button class="tab" data-tab="rej">Mam zaproszenie</button>
+        </div>
+        <form id="f-log" class="form" autocomplete="on">
+          <label>Imię gracza<input name="nick" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+          <label>Hasło<input name="haslo" type="password" autocomplete="current-password" required></label>
+          <button class="btn btn-gold" type="submit">Wejdź do Midgardu</button>
+        </form>
+        <form id="f-rej" class="form" autocomplete="on" hidden>
+          <label>Kod zaproszenia<input name="kod" placeholder="MID-XXXX-XXXX" autocapitalize="characters" spellcheck="false" required></label>
+          <label>Imię gracza<input name="nick" autocomplete="username" spellcheck="false" maxlength="20" required></label>
+          <label>Hasło (co najmniej 6 znaków)<input name="haslo" type="password" autocomplete="new-password" required></label>
+          <label>Powtórz hasło<input name="haslo2" type="password" autocomplete="new-password" required></label>
+          <button class="btn btn-gold" type="submit">Załóż konto</button>
+        </form>
+        <p class="form-err" id="login-err"></p>
+        <p class="login-note">Jedno konto działa na wszystkich Twoich urządzeniach. Na telefonie, tablecie i laptopie logujesz się tym samym imieniem i hasłem, a Twoja gra jest wszędzie ta sama.</p>
+        <button class="link-btn" id="btn-guest" hidden>Graj bez konta, tylko na tym urządzeniu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- EKRAN STARTOWY -->
+  <section id="screen-start" class="screen">
+    <div class="start-art"></div>
+    <button class="konto-chip" id="btn-konto"><span class="konto-nick" id="konto-nick"></span><small id="konto-sync"></small></button>
     <button class="icon-btn sound-btn start-sound" aria-label="Dźwięk"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16 9c1.3 1.6 1.3 4.4 0 6M18.5 6.5c2.8 3 2.8 8 0 11"/><path class="mute" d="M16 9l5 6M21 9l-5 6"/></svg></button>
     <div class="start-shade"></div>
     <div class="start-content">
@@ -120,6 +151,16 @@
       <div class="sheet-actions"><button class="btn btn-gold" id="btn-rules-close">Rozumiem</button></div>
     </div>
   </div>
+
+  <div class="overlay" id="ov-konto" hidden>
+    <div class="sheet iron sheet-wide">
+      <h2 class="sheet-title">Konto</h2>
+      <div id="konto-body"></div>
+      <div class="sheet-actions"><button class="btn btn-gold" id="btn-konto-close">Zamknij</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
 
   <div class="overlay" id="ov-menu" hidden>
     <div class="sheet iron">

@@ -5,8 +5,10 @@ import * as UI from './ui.js';
 import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES } from './data.js';
 import { key, distance } from './hex.js';
 import { audio } from './audio.js';
+import { konto } from './konto.js';
+import * as KUI from './konto-ui.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -18,14 +20,28 @@ let busy = false;
 let board = null;
 const sel = { heroId: null, dieId: null, mode: null, hlUnit: null };
 let pick = { team: ['berserker', 'tarczowniczka', 'volva'], level: 'wedrowiec' };
-try { const p = JSON.parse(localStorage.getItem(PREF_KEY)); if (p && p.team && p.level) pick = p; } catch (e) {}
+function wczytajPick() {
+  let p = konto.dane().druzyna;
+  if (!p) { try { p = JSON.parse(localStorage.getItem(PREF_KEY)); } catch (e) {} }
+  if (p && p.team && p.level) pick = { team: p.team.slice(), level: p.level };
+}
+wczytajPick();
 
 // ---------- zapis ----------
+// Zapis: na koncie (serwer + kopia w urządzeniu); bez konta tylko w urządzeniu.
 const store = {
-  save() { try { if (state && !state.result) localStorage.setItem(SAVE_KEY, JSON.stringify(state)); else localStorage.removeItem(SAVE_KEY); } catch (e) {} },
-  load() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); return s && s.v === E.SAVE_VERSION ? s : null; } catch (e) { return null; } },
-  clear() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} },
+  save() { konto.zapisz({ ...konto.dane(), bitwa: state && !state.result ? state : null, druzyna: pick }); },
+  load() { const s = konto.dane().bitwa; return s && s.v === E.SAVE_VERSION ? s : null; },
+  clear() { konto.zapisz({ ...konto.dane(), bitwa: null, druzyna: pick }); },
 };
+// stary zapis sprzed kont (tylko w urządzeniu) przenosimy raz na konto
+function przeniesStaryZapis() {
+  try {
+    const old = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (old && old.v === E.SAVE_VERSION && !konto.dane().bitwa) konto.zapisz({ ...konto.dane(), bitwa: old, druzyna: pick });
+    localStorage.removeItem(SAVE_KEY);
+  } catch (e) {}
+}
 
 // ---------- grafiki ----------
 function loadImages() {
@@ -396,7 +412,6 @@ function openTeam() {
 
 async function newBattle() {
   store.clear();
-  try { localStorage.setItem(PREF_KEY, JSON.stringify(pick)); } catch (e) {}
   state = E.newBattle(undefined, pick.team, pick.level);
   view = E.clone(state);
   undo = [];
@@ -425,6 +440,40 @@ function continueBattle() {
 
 function refreshStart() {
   $('btn-continue').hidden = !store.load();
+  $('konto-nick').textContent = konto.zalogowany ? konto.nick : 'Bez konta';
+  pokazStatus(konto.zalogowany ? konto.status : 'gosc');
+}
+
+function pokazStatus(st) {
+  const el = $('konto-sync');
+  const T = { zapisane: ['zapisano na serwerze', 'ok'], czeka: ['zapisuję…', ''], offline: ['bez sieci, wyślę później', 'warn'], blad: ['błąd zapisu na serwerze', 'warn'], nieznany: ['łączę z serwerem…', ''], gosc: ['gra tylko na tym urządzeniu', ''] };
+  const [t, c] = T[st] || T.nieznany;
+  el.textContent = t; el.className = c;
+}
+
+function naEkranie(id) { return $(id).classList.contains('active'); }
+
+// Gdy z serwera przyjdzie nowszy zapis (gra na innym urządzeniu).
+function przyjmijZdalny(powod) {
+  wczytajPick();
+  if (naEkranie('screen-battle') && !busy) {
+    const s = store.load();
+    if (s && (!state || s.round !== state.round || JSON.stringify(s) !== JSON.stringify(state))) {
+      state = s; view = E.clone(state); undo = [];
+      Object.assign(sel, { heroId: null, dieId: null, mode: null, hlUnit: null });
+      render();
+      KUI.toast('Wczytano nowszy stan bitwy z innego urządzenia.');
+    }
+  } else if (powod === 'konflikt') KUI.toast('Na innym urządzeniu zapisano nowszy stan. Wczytałem go.');
+  refreshStart();
+}
+
+function poZalogowaniu(nowe) {
+  wczytajPick();
+  przeniesStaryZapis();
+  refreshStart();
+  show('screen-start');
+  if (konto.zalogowany) KUI.toast(nowe ? `Witaj w Midgardzie, ${konto.nick}!` : `Witaj, ${konto.nick}.`);
 }
 
 // ---------- uruchomienie ----------
@@ -432,6 +481,23 @@ async function boot() {
   $('version').textContent = 'wersja ' + VERSION;
   $('rules-text').innerHTML = UI.rulesHtml();
   refreshStart();
+  // konto i synchronizacja
+  KUI.initLogin(poZalogowaniu);
+  konto.onStatus = (st) => pokazStatus(st);
+  konto.onZmiana = przyjmijZdalny;
+  konto.onWylogowanie = () => { show('screen-login'); KUI.toast('Sesja wygasła. Zaloguj się ponownie.'); };
+  $('btn-konto').onclick = () => KUI.otworzKonto(() => show('screen-login'));
+  if (konto.zalogowany || konto.gosc) {
+    show('screen-start');
+    if (konto.zalogowany) {
+      konto.ja().catch(() => {});
+      konto.pobierz().then((zm) => { if (zm) przyjmijZdalny(); else refreshStart(); });
+    }
+  } else show('screen-login');
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && konto.zalogowany && !busy) konto.pobierz().then((zm) => { if (zm) przyjmijZdalny(); });
+  });
+
   const images = await loadImages();
   board = new Board($('board'), images);
   board.onTap = onTap;

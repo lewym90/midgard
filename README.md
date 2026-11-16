@@ -4,11 +4,17 @@ Kooperacyjna cyfrowa planszówka w świecie nordyckich mitów. Aplikacja PWA: dz
 
 **Zagraj:** https://lewym90.github.io/midgard/
 
-## Stan (wersja 0.3.0)
+## Stan (wersja 0.4.0)
 - Pierwsza bitwa: *Kurhan nad fiordem*. Drużyna 3 z 8 bohaterów, trzy poziomy trudności (Wędrowiec, Wojownik, Ragnarök).
 - Nici Norn (wrogowie pokazują zamiary), kości runiczne, narada z cofaniem ruchów, mur tarcz, mróz, Hamingja.
 - Zapis po każdym ruchu (pamięć urządzenia).
 - Muzyka: hymn w menu, muzyka bitwy w 3 poziomach napięcia (przenikanie wg sytuacji na planszy). Pliki w `assets/audio/`, lista dostępnych w `assets/audio/lista.json`, oryginały w `assets/zrodla/audio/`.
+
+## Konta i serwer
+- Każdy gracz ma konto (imię + hasło) działające na wszystkich jego urządzeniach. Nowe konta tylko z kodem zaproszenia od administratora.
+- Serwer: `serwer/midgard.mjs` (Node 24, bez bibliotek, SQLite). Instalacja/aktualizacja na serwerze (jako root):
+  `curl -fsSL https://raw.githubusercontent.com/lewym90/midgard/main/serwer/install.sh | bash`
+- Adres API: https://188-68-247-201.sslip.io/midgard-api
 
 ## Struktura
 - `index.html`, `css/style.css` to wygląd.
