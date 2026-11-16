@@ -444,11 +444,11 @@ export class Board {
         g.closePath(); g.fill();
         // znacznik obrażeń
         const ang0 = -Math.PI / 4 + (slot.get(it) || 0) * 0.78;
-        const bxp = tx + Math.cos(ang0) * s * 0.78, byp = ty + Math.sin(ang0) * s * 0.78, br = s * 0.25;
+        const bxp = tx + Math.cos(ang0) * s * 0.78, byp = ty + Math.sin(ang0) * s * 0.78, br = Math.max(9, s * 0.27);
         g.fillStyle = cut ? '#3a3633' : '#5c130c';
         g.strokeStyle = cut ? '#777' : '#f2d38a'; g.lineWidth = Math.max(1, s * 0.035);
         g.beginPath(); g.arc(bxp, byp, br, 0, Math.PI * 2); g.fill(); g.stroke();
-        g.fillStyle = '#fff3e0'; g.font = `700 ${Math.round(s * 0.32)}px Cinzel, serif`;
+        g.fillStyle = '#fff3e0'; g.font = `700 ${Math.round(br * 1.25)}px Cinzel, serif`;
         g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText(String(it.dmg), bxp, byp + s * 0.02);
         if (cut) {
@@ -522,7 +522,7 @@ export class Board {
         g.beginPath(); g.arc(x, y, R * 0.89, 0, Math.PI * 2); g.stroke();
       }
       // życie
-      const pw = R * 1.55, ph = Math.max(10, s * 0.3), py = y + R * 0.92;
+      const pw = Math.max(R * 1.55, 30), ph = Math.max(15, s * 0.36), py = y + R * 0.92;
       g.fillStyle = 'rgba(8,6,5,0.92)';
       this._pill(g, x - pw / 2, py - ph / 2, pw, ph);
       g.fill();
@@ -533,12 +533,12 @@ export class Board {
       g.restore();
       g.strokeStyle = u.side === 'hero' ? 'rgba(242,211,138,0.7)' : 'rgba(200,80,60,0.6)'; g.lineWidth = 1;
       this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.stroke();
-      g.fillStyle = '#fff6e6'; g.font = `700 ${Math.round(ph * 0.72)}px Cinzel, serif`;
+      g.fillStyle = '#fff8ec'; g.font = `700 ${Math.round(ph * 0.78)}px Cinzel, serif`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(`${u.hp}`, x, py + ph * 0.04);
       // tarcza
       if (u.side === 'hero' && u.shield > 0) {
-        const sx = x - R * 0.92, sy = y - R * 0.7, sr = s * 0.22;
+        const sx = x - R * 0.92, sy = y - R * 0.7, sr = Math.max(8, s * 0.24);
         g.fillStyle = '#163044'; g.strokeStyle = '#a6cfe9'; g.lineWidth = Math.max(1, s * 0.03);
         g.beginPath(); g.arc(sx, sy, sr, 0, Math.PI * 2); g.fill(); g.stroke();
         g.fillStyle = '#e4f3ff'; g.font = `700 ${Math.round(sr * 1.15)}px Cinzel, serif`;
@@ -552,7 +552,7 @@ export class Board {
         const mx = x, my = y - R - s * 0.32;
         g.fillStyle = '#f2d38a'; g.strokeStyle = '#3a0c06'; g.lineWidth = Math.max(1, s * 0.03);
         g.beginPath(); g.moveTo(mx, my + s * 0.2); g.lineTo(mx - s * 0.16, my); g.lineTo(mx + s * 0.16, my); g.closePath(); g.fill(); g.stroke();
-        g.font = `700 ${Math.round(s * 0.24)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.font = `700 ${Math.round(Math.max(10, s * 0.26))}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
         g.lineWidth = Math.max(2, s * 0.05); g.strokeStyle = 'rgba(0,0,0,0.9)';
         g.strokeText('CEL', mx, my - s * 0.04); g.fillText('CEL', mx, my - s * 0.04);
         g.textBaseline = 'middle';
@@ -560,7 +560,7 @@ export class Board {
       // numer zamiaru
       const it = v.intents && v.intents.find((i) => i.unitId === u.id && i.kind !== 'summon');
       if (it && u.side === 'enemy') {
-        const bx = x - R * 0.82, by = y - R * 0.78, br = s * 0.2;
+        const bx = x - R * 0.82, by = y - R * 0.78, br = Math.max(8, s * 0.22);
         g.fillStyle = '#1b1714'; g.strokeStyle = it.canceled ? '#777' : '#d64a3c'; g.lineWidth = Math.max(1, s * 0.03);
         g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill(); g.stroke();
         g.fillStyle = '#efe4cc'; g.font = `700 ${Math.round(br * 1.15)}px Cinzel, serif`;
@@ -584,7 +584,7 @@ export class Board {
       if (f.kind === 'text') {
         const e = easeOut(Math.min(1, k * 1.4));
         g.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-        const size = Math.round(s * (f.big ? 0.58 : 0.32));
+        const size = Math.round(Math.max(f.big ? 18 : 13, s * (f.big ? 0.62 : 0.36)));
         g.font = `700 ${size}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.lineWidth = Math.max(2, size * 0.16); g.strokeStyle = 'rgba(0,0,0,0.85)';
         const yy = f.y - s * 0.5 * e;
