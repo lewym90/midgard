@@ -92,14 +92,13 @@ class Osada {
     this.cv = $('o-canvas');
     this.g = this.cv.getContext('2d');
     $('o-wroc').onclick = onWyjdz;
-    $('o-wyprawa').onclick = () => onWyprawa();
+    $('o-wyprawa').onclick = () => { audio.unlock(); this.otworzMape(); };
     $('o-zbierz').onclick = () => this.zbierzWszystko();
     $('o-budowa').onclick = () => { audio.unlock(); this.wybrany = null; this.polePuste = null; this.tryb = null; this._pokazPanel('lista'); };
     $('o-bohaterowie').onclick = () => { audio.unlock(); this.wybrany = null; this.polePuste = null; this.tryb = null; this._pokazPanel('bohaterowie'); };
     $('o-sheet-zamknij').onclick = () => this.zamknijPanel();
-    $('o-mapa-btn').onclick = () => { audio.unlock(); this.zamknijPanel(); $('ov-mapa').hidden = false; };
+    $('o-mapa-btn').onclick = () => { audio.unlock(); this.otworzMape(); };
     $('mapa-zamknij').onclick = () => { $('ov-mapa').hidden = true; };
-    $('mapa-kurhan').onclick = () => { $('ov-mapa').hidden = true; onWyprawa(); };
     this._wczytajObrazy();
     const mapaImg = new Image(); mapaImg.src = 'assets/img/tlo/mapa-swiata.webp'; mapaImg.decode?.().catch(() => {});
     this._gesty();
@@ -423,6 +422,64 @@ class Osada {
     box.querySelectorAll('[data-werbuj]').forEach((btn) => {
       btn.onclick = () => this.akcja('werbuj', { typ: btn.dataset.werbuj }, () => { audio.play('klik'); toast(`${HEROES[btn.dataset.werbuj].name} dołącza do osady.`); });
     });
+  }
+
+  // ---------- mapa Midgardu: cele wypraw ----------
+  otworzMape() {
+    this.zamknijPanel();
+    $('mapa-karta').hidden = true;
+    this._rysujCele();
+    $('ov-mapa').hidden = false;
+  }
+
+  _rysujCele() {
+    const o = this.widok, t = this.teraz();
+    let h = `<div class="mapa-dom" style="left:${MAPA_DOM[0]}%;top:${MAPA_DOM[1]}%"><span class="mapa-etyk dom">Twoja osada</span></div>`;
+    for (const cel of O.KOLEJNOSC_CELOW) {
+      const [x, y] = MAPA_CELE[cel];
+      const nie = o ? O.czyMoznaNajechac(o, cel, t) : null;
+      const zamkniety = nie && !nie.includes('odbudowuje');
+      const pokonany = o && O.wygraneZJarlem(o, cel) > 0;
+      const stan = zamkniety ? ' zamkniety' : nie ? ' odpoczywa' : '';
+      h += `<button class="mapa-cel${stan}${cel === 'kurhan' ? ' kurhan' : ' jarl'}${pokonany ? ' pokonany' : ''}${x > 80 ? ' prawy' : ''}" data-cel="${cel}" ${cel === 'kurhan' ? 'id="mapa-kurhan"' : ''} style="left:${x}%;top:${y}%">
+        <span class="mapa-pin"></span><span class="mapa-etyk">${cel === 'kurhan' ? O.CELE[cel].nazwa : O.CELE[cel].jarl}</span></button>`;
+    }
+    $('mapa-cele').innerHTML = h;
+    $('mapa-cele').querySelectorAll('[data-cel]').forEach((b) => {
+      b.onclick = () => {
+        $('mapa-cele').querySelectorAll('.mapa-cel').forEach((x) => x.classList.toggle('wybrany', x === b));
+        this._kartaCelu(b.dataset.cel);
+      };
+    });
+  }
+
+  _kartaCelu(cel) {
+    const k = $('mapa-karta');
+    if (cel === 'kurhan') {
+      k.innerHTML = `<button class="o-x" data-zamknij aria-label="Zamknij"></button>
+        <h3>Kurhan nad fiordem</h3>
+        <p class="mapa-karta-opis">Stary kurhan pękł, a umarli wychodzą z ziemi. Zgładźcie Pana Kurhanu. Trudność wybierasz przed bitwą: im trudniej, tym większy łup.</p>
+        <p class="mapa-karta-stan">Zawsze dostępny. Każdy oddział budzi tu jednego trupa więcej.</p>
+        <div class="o-row o-row-end"><button class="btn btn-gold" data-ruszaj>Ruszaj do kurhanu</button></div>`;
+      k.hidden = false;
+      k.querySelector('[data-zamknij]').onclick = () => { k.hidden = true; };
+      k.querySelector('[data-ruszaj]').onclick = () => { k.hidden = true; $('ov-mapa').hidden = true; this.onWyprawa('kurhan'); };
+      return;
+    }
+    const o = this.widok, t = this.teraz(), d = O.CELE[cel];
+    const nie = o ? O.czyMoznaNajechac(o, cel, t) : 'Brak połączenia z osadą.';
+    const j = o && o.jarlowie && o.jarlowie[cel];
+    const l = o ? O.lupJarla(o, cel, true) : null;
+    const lupTxt = l ? O.SUROWCE.filter((s2) => l[s2]).map((s2) => `<span class="o-k"><img src="${ikonaUrl(s2)}" alt="">${liczba(l[s2])}</span>`).join('') + `<span class="o-k"><img src="${ikonaUrl('ik-slawa')}" alt="">${l.slawa}</span>` : '';
+    k.innerHTML = `<button class="o-x" data-zamknij aria-label="Zamknij"></button>
+      <h3>${d.nazwa}</h3>
+      <p class="mapa-karta-opis">${d.opis}</p>
+      <p class="mapa-karta-stan">${j && j.wygrane ? `Zdobyta ${j.wygrane} ${j.wygrane === 1 ? 'raz' : 'razy'}. ` : ''}${nie ? `<span class="o-brak">${nie}${j && j.odpoczynek > t ? ` Jeszcze ${czas(j.odpoczynek - t)}.` : ''}</span>` : 'Wioska czeka. Rozbijcie bramę i zburzcie dwór.'}</p>
+      <div class="mapa-karta-lup"><span>Łup za zwycięstwo${o && !(j && j.wygrane) ? ' (pierwsze: podwójna sława)' : ''}:</span><div class="o-koszt">${lupTxt}</div></div>
+      <div class="o-row o-row-end"><button class="btn btn-gold" data-ruszaj ${nie ? 'disabled' : ''}>Ruszaj na wioskę</button></div>`;
+    k.hidden = false;
+    k.querySelector('[data-zamknij]').onclick = () => { k.hidden = true; };
+    k.querySelector('[data-ruszaj]').onclick = () => { k.hidden = true; $('ov-mapa').hidden = true; this.onWyprawa(cel); };
   }
 
   // ---------- najazdy ----------
@@ -1017,6 +1074,10 @@ class Osada {
 
   _pigulka(g, x, y, w, h) { const r = h / 2; g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.arc(x + w - r, y + r, r, -Math.PI / 2, Math.PI / 2); g.lineTo(x + r, y + h); g.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5); g.closePath(); }
 }
+
+// położenie celów na obrazie mapy (procenty szerokości i wysokości)
+const MAPA_DOM = [27, 46];
+const MAPA_CELE = { kurhan: [64.6, 69], 'jarl-ketil': [58.9, 45.7], 'jarl-ragna': [74.8, 81.3], 'jarl-thorgrim': [90.6, 28.2] };
 
 export const osada = new Osada();
 

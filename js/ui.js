@@ -9,6 +9,7 @@ const GEN = NAMES.gen;
 const FALLEN = NAMES.fallen;
 
 export const tokenUrl = (u) => (BUDOWLE[u.type] && u.side === 'hero' ? `assets/img/osada/${BUDOWLE[u.type].sprite}.webp`
+  : u.side === 'enemy' && ENEMIES[u.type] && ENEMIES[u.type].sprite ? `assets/img/osada/${ENEMIES[u.type].sprite}.webp`
   : `assets/img/${u.oddzial || ODDZIALY[u.type] ? 'oddzialy' : u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`);
 
 function plural(n, one, few, many) {
@@ -90,6 +91,7 @@ export function intentText(v, it) {
   if (it.canceled) return `Nić przecięta. ${name} w tej rundzie nic nie zrobi.`;
   if (it.kind === 'summon') return `${name} przyzwie z kurhanu nowego draugra.`;
   const moves = it.path.length > 1;
+  if (it.kind === 'march' && !ENEMIES[u.type].move) return `${name} czeka, aż ktoś podejdzie na ${ENEMIES[u.type].range} pola.`;
   if (it.kind === 'march') return `${name} idzie w stronę ${tgt ? `<b>${GEN[tgt.type]}</b>` : 'drużyny'}.`;
   const who = tgt ? `<b>${GEN[tgt.type]}</b>` : 'celu';
   const dmg = `<span class="dmg">${it.dmg}</span>`;
@@ -120,22 +122,28 @@ export function renderNorns(v, sel, handlers) {
   const waves = upcomingWaves(v, 2);
   const left = remainingInBarrow(v);
   const boss = v.units.find((x) => x.type === 'pan-kurhanu');
-  const obrona = scen(v).winOnTime;
+  const S = scen(v);
+  const obrona = S.winOnTime;
   const dom = v.units.find((x) => x.type === 'dlugi-dom');
+  const dwor = S.celWroga && v.units.find((x) => x.type === S.celWroga);
+  const jarl = v.units.find((x) => x.side === 'enemy' && ENEMIES[x.type].boss && ENEMIES[x.type].zywy);
   const bossAt = bossAwakeAt(v);
-  const bossLine = obrona
+  const bossLine = S.celWroga
+    ? `${dwor ? `<b>Dwór jarla: ${dwor.hp}/${dwor.maxHp}</b>. Zburzcie go, a wioska się podda.` : 'Dwór jarla stoi za palisadą.'}${jarl && jarl.hp > 0 ? ` ${ENEMIES[jarl.type].name}: ${jarl.hp}/${jarl.maxHp}.` : ''} Do posiłków jarla: ${Math.max(0, S.maxRounds - v.round)} ${plural(Math.max(0, S.maxRounds - v.round), 'runda', 'rundy', 'rund')}.`
+    : obrona
     ? `${dom ? `<b>Długi Dom: ${dom.hp}/${dom.maxHp}</b>. ` : ''}Do świtu: ${Math.max(0, scen(v).maxRounds - v.round)} ${plural(Math.max(0, scen(v).maxRounds - v.round), 'runda', 'rundy', 'rund')}.${bossAt && !boss ? ` W rundzie ${bossAt} przyjdzie Pan Kurhanu.` : boss && boss.hp > 0 ? ` <b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>.` : ''}`
     : !boss
       ? `Pan Kurhanu śpi. Obudzi się w rundzie ${bossAt}.`
       : boss.hp > 0 ? `<b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>. Jego śmierć kończy bitwę, a wszystkie trupy rozsypią się w proch.` : 'Pan Kurhanu nie żyje.';
-  const barrow = `<div class="barrow">${obrona ? 'W lesie czeka jeszcze' : 'W kurhanie czeka jeszcze'}: <b>${left} ${plural(left, 'trup', 'trupy', 'trupów')}</b>.<div class="boss-line">${bossLine}</div></div>`;
+  const rz = S.rezerwaRzecz || ['trup', 'trupy', 'trupów'];
+  const barrow = `<div class="barrow">${S.rezerwa || 'W kurhanie czeka jeszcze'}: <b>${left} ${plural(left, rz[0], rz[1], rz[2])}</b>.<div class="boss-line">${bossLine}</div></div>`;
   $('barrow').innerHTML = barrow;
   if (volva && waves.length) {
     fs.innerHTML = '<h3>Wieszczba Völvy</h3>' + waves.map((w) => {
       const counts = {};
       for (const t of w.units) counts[t] = (counts[t] || 0) + 1;
       const txt = Object.entries(counts).map(([t, n]) => (n > 1 ? `${n}× ` : '') + ENEMIES[t].name).join(', ');
-      return `<p><b>Runda ${w.round}:</b> ${obrona ? 'z lasu wyjdzie' : 'z kurhanu wstanie'} ${txt}.</p>`;
+      return `<p><b>Runda ${w.round}:</b> ${S.przybycie || 'z kurhanu wstanie'} ${txt}.</p>`;
     }).join('');
   } else if (hadVolva && !volva) {
     fs.innerHTML = '<h3>Wieszczba</h3><p>Völva poległa. Nie wiecie już, kiedy przyjdą kolejni.</p>';
@@ -234,6 +242,8 @@ export function rulesHtml() {
     <li><b>Kamień runiczny</b> osłania: twoi do 2 pól od niego dostają 1 obrażenie mniej.</li>
     <li>Jeśli nie staniesz do bitwy, osada broni się sama: liczy się siła bohaterów, wojska i umocnień przeciw sile fali. Przegrana kosztuje część zapasów (srebra mniej, bo pilnuje go skarbiec), a następna fala przychodzi później.</li>
   </ul>
+  <h3>Wioski jarłów</h3>
+  <p>Na mapie Midgardu czekają wioski jarłów, którzy przeszli na stronę zimy: Ketil Jednooki (od Długiego Domu 3), Ragna Siwa (Długi Dom 5, po pokonaniu Ketila) i Thorgrim Lodowy Kieł (Długi Dom 7, po pokonaniu Ragny). Wioska broni się za palisadą, przez którą drużyna nie przejdzie: trzeba rozbić bramę albo strzelać nad palami. Wieże jarła strzelają na 3 pola. Wygrywacie, gdy zburzycie dwór jarła w 10 rund. Za każdy oddział jarl zwołuje jednego wojownika więcej, a dwór jest mocniejszy. Łup jest duży, zwłaszcza w srebrze i żelazie, a pierwsze zwycięstwo daje podwójną sławę. Po zdobyciu wioska odbudowuje się przez 8 godzin.</p>
   <h3>Wrogowie</h3>
   <ul>
     ${Object.values(ENEMIES).map((e) => `<li><b>${e.name}</b> (życie ${e.hp}, ruch ${e.move}, cios ${e.atk}${e.range > 1 ? `, zasięg ${e.range}` : ''}). ${e.desc}</li>`).join('')}

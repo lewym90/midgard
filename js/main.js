@@ -10,7 +10,7 @@ import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 import { osada, opisRaportu } from './osada.js';
 
-const VERSION = '0.9.0';
+const VERSION = '0.10.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -53,7 +53,7 @@ function loadImages() {
     ...Object.fromEntries(HERO_ORDER.map((k) => ['zeton-' + k, `bohaterowie/${k}-zeton`])),
     ...Object.fromEntries(ODDZIALY_ORDER.map((k) => ['zeton-' + k, `oddzialy/${k}-zeton`])),
     'zeton-draugr': 'wrogowie/draugr-zeton', 'zeton-lucznik': 'wrogowie/lucznik-zeton', 'zeton-pan-kurhanu': 'wrogowie/pan-kurhanu-zeton',
-    ...Object.fromEntries(['dlugi_dom', 'brama', 'wieza', 'kamien', 'palisada'].map((k) => ['bud-' + k, `osada/${k}`])),
+    ...Object.fromEntries(['dlugi_dom', 'dlugi_dom-2', 'brama', 'wieza', 'kamien', 'palisada'].map((k) => ['bud-' + k, `osada/${k}`])),
   };
   const out = {};
   return Promise.all(Object.entries(list).map(([k, p]) => new Promise((res) => {
@@ -442,7 +442,9 @@ async function rozliczWyprawe(id, wynik, polegli = [], ocaleli = []) {
     const d = r.lup.dodane, st = r.lup.stracone;
     const czesci = Object.keys(NAZWY_SUR).filter((k) => d[k]).map((k) => `${NAZWY_SUR[k]} +${d[k]}`);
     const przep = Object.keys(NAZWY_SUR).filter((k) => st[k] > 0).map((k) => `${NAZWY_SUR[k]} ${st[k]}`);
-    let t = `Łup do osady: ${czesci.length ? czesci.join(', ') : 'nic się nie zmieściło'}${r.lup.slawa ? `, sława +${r.lup.slawa}` : ''}.`;
+    const pusty = !Object.values(d).some((n) => n > 0) && !Object.values(st).some((n) => n > 0);
+    let t = pusty && r.cel && r.cel !== 'kurhan' ? 'Wioska się obroniła. Tym razem bez łupu.'
+      : `Łup do osady: ${czesci.length ? czesci.join(', ') : 'nic się nie zmieściło'}${r.lup.slawa ? `, sława +${r.lup.slawa}` : ''}.`;
     if (przep.length) t += ` Nie zmieściło się w magazynach: ${przep.join(', ')}.`;
     if (el()) el().textContent = t;
     osada._przyjmij && osada._przyjmij(r);
@@ -495,8 +497,10 @@ function openTeam() {
     }, pick.tryb === 'obrona');
     else $('team-troops').hidden = true;
     const obrona = pick.tryb === 'obrona' && o;
-    $('levels').hidden = !!obrona;
+    const jarl = pick.tryb === 'wyprawa' && pick.zOsady && pick.cel && pick.cel !== 'kurhan' ? O.CELE[pick.cel] : null;
+    $('levels').hidden = !!(obrona || jarl);
     if (obrona) $('level-desc').textContent = `Najazd: ${O.NAZWY_FAL[O.poziomFali(o)]}. Bronicie Długiego Domu za palisadą${O.umocnienia(o).wieze.length ? ', wieże strzelają' : ''}. Wygrywacie, gdy przetrwacie 8 rund.`;
+    else if (jarl) $('level-desc').textContent = `${jarl.nazwa}. Rozbijcie bramę i zburzcie dwór jarla w 10 rund. Za każdy oddział jarl zwołuje jednego wojownika więcej.`;
     else UI.renderLevels(pick.level, (l) => { pick.level = l; draw(); });
     const go = $('btn-team-go');
     go.disabled = pick.team.length !== 3;
@@ -525,8 +529,11 @@ async function newBattle() {
     } catch (e) { KUI.toast(e.message); return; }
   } else if (konto.zalogowany && pick.zOsady) {
     try {
-      const r = await konto.api('POST', '/osada/wyprawa/start', { poziom: pick.level, druzyna: pick.team, oddzialy: pick.oddzialy || [] });
-      wyprawa = r.wyprawa; premie = r.premie; opcje = { rozwoj: r.rozwoj || {}, oddzialy: r.oddzialy || [] };
+      const cel = pick.cel || 'kurhan';
+      const r = await konto.api('POST', '/osada/wyprawa/start', { cel, poziom: pick.level, druzyna: pick.team, oddzialy: pick.oddzialy || [] });
+      if (cel !== 'kurhan' && r.scenariusz !== 'wioska') { KUI.toast('Serwer gry nie zna jeszcze wiosek jarłów. Zaktualizuj serwer instalatorem.'); return; }
+      wyprawa = r.wyprawa; premie = r.premie; opcje = { rozwoj: r.rozwoj || {}, oddzialy: r.oddzialy || [], scenariusz: r.scenariusz || 'kurhan' };
+      if (r.poziom) poziom = r.poziom;
       if (r.osada) osada._przyjmij(r);
     } catch (e) {
       if (e.kod >= 400 && e.kod < 500) { KUI.toast(e.message); return; }
@@ -645,13 +652,13 @@ async function boot() {
   };
   $('m-music').onclick = () => { audio.setPref('music', !audio.prefs.music); refreshSound(); };
   $('m-sfx').onclick = () => { audio.setPref('sfx', !audio.prefs.sfx); refreshSound(); };
-  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; pick.zOsady = false; pick.tryb = null; openTeam(); };
+  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; pick.zOsady = false; pick.tryb = null; pick.cel = 'kurhan'; openTeam(); };
   $('btn-team-back').onclick = () => show(pick.zOsady ? 'screen-osada' : 'screen-start');
   $('btn-osada').onclick = () => { audio.unlock(); show('screen-osada'); };
-  osada.init(async () => {
+  osada.init(async (cel = 'kurhan') => {
     audio.unlock();
     if (store.load() && !(await confirmBox('Nowa wyprawa?', 'Masz niedokończoną bitwę. Zostanie utracona.'))) return;
-    pick.zOsady = true; pick.tryb = 'wyprawa'; openTeam();
+    pick.zOsady = true; pick.tryb = 'wyprawa'; pick.cel = cel; openTeam();
   }, () => { refreshStart(); show('screen-start'); }, async () => {
     audio.unlock();
     if (store.load() && !(await confirmBox('Wyjść naprzeciw fali?', 'Masz niedokończoną bitwę. Zostanie utracona.'))) return;
@@ -669,7 +676,7 @@ async function boot() {
   $('btn-menu').onclick = () => overlay('ov-menu');
   $('m-resume').onclick = () => overlay('ov-menu', false);
   $('m-rules').onclick = () => { overlay('ov-menu', false); overlay('ov-rules'); };
-  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); if (!state.obrona) pick.level = state.level; newBattle(); } };
+  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); if (state.scenario === 'kurhan') pick.level = state.level; newBattle(); } };
   $('m-exit').onclick = () => { overlay('ov-menu', false); store.save(); refreshStart(); show(domEkran()); };
   $('btn-end-again').onclick = () => { overlay('ov-end', false); openTeam(); };
   $('btn-end-menu').onclick = () => { overlay('ov-end', false); refreshStart(); show(domEkran()); };

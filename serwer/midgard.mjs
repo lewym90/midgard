@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as O from './osada-dane.js';
 
-const WERSJA = '1.4.0';
+const WERSJA = '1.5.0';
 const PORT = Number(process.env.PORT || 18900);
 const DANE = process.env.MIDGARD_DANE || './dane';
 const ORIGINS = (process.env.MIDGARD_ORIGINS || 'https://lewym90.github.io,http://localhost:8765,http://127.0.0.1:8765').split(',');
@@ -267,7 +267,9 @@ const trasy = {
   'POST /osada/wyprawa/start': async (req) => {
     const b = await czytajJson(req);
     return zOsada(req, (o, t) => {
-      const poziom = O.LUP[b.poziom] ? b.poziom : 'wedrowiec';
+      const cel = O.CELE[b.cel] ? String(b.cel) : 'kurhan';
+      if (cel !== 'kurhan') { const nie = O.czyMoznaNajechac(o, cel, t); if (nie) throw new Blad(400, nie); }
+      const poziom = cel !== 'kurhan' ? O.CELE[cel].poziom : O.LUP[b.poziom] ? b.poziom : 'wedrowiec';
       // starsze wersje gry nie wysyłają drużyny: tylko premie, bez rozwoju i wojska
       let p = { druzyna: null, oddzialy: [], rozwoj: {}, premie: O.premieBitwy(o) };
       if (Array.isArray(b.druzyna)) {
@@ -275,10 +277,11 @@ const trasy = {
         if (p.blad) throw new Blad(400, p.blad);
       }
       const id = crypto.randomBytes(8).toString('hex');
-      const lista = Object.entries(o.wyprawy || {}).sort((a, c) => a[1].start - c[1].start);
+      // na jednego jarła liczy się tylko ostatnia rozpoczęta wyprawa (bez podwójnego łupu)
+      const lista = Object.entries(o.wyprawy || {}).filter(([, w]) => cel === 'kurhan' || w.cel !== cel).sort((a, c) => a[1].start - c[1].start);
       o.wyprawy = Object.fromEntries(lista.slice(-2));
-      o.wyprawy[id] = { start: t, poziom, druzyna: p.druzyna, oddzialy: p.oddzialy };
-      return { wyprawa: id, premie: p.premie, rozwoj: p.rozwoj, oddzialy: p.oddzialy };
+      o.wyprawy[id] = { start: t, poziom, cel, druzyna: p.druzyna, oddzialy: p.oddzialy };
+      return { wyprawa: id, premie: p.premie, rozwoj: p.rozwoj, oddzialy: p.oddzialy, cel, scenariusz: O.CELE[cel].scenariusz, poziom };
     });
   },
   'POST /osada/wyprawa/koniec': async (req) => {
@@ -291,7 +294,8 @@ const trasy = {
       const wygrana = b.wynik === 'win';
       o.statystyki[wygrana ? 'wygrane' : 'przegrane']++;
       const druzyna = O.rozliczDruzyne(o, w, wygrana, Array.isArray(b.polegli) ? b.polegli.map(String) : [], Array.isArray(b.ocaleli) ? b.ocaleli.map(String) : (w.oddzialy || []), t);
-      return { lup: O.dodajLup(o, O.lup(w.poziom, wygrana)), druzyna };
+      const l = w.cel && w.cel !== 'kurhan' ? O.rozliczJarla(o, w.cel, wygrana, t) : O.lup(w.poziom, wygrana);
+      return { lup: O.dodajLup(o, l), druzyna, cel: w.cel || 'kurhan' };
     });
   },
 

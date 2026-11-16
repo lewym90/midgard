@@ -5,7 +5,7 @@ import { distance, key, parseKey } from '../js/hex.js';
 
 function botRound(s, smart) {
   const heroes = E.livingHeroes(s);
-  const boss = () => E.livingEnemies(s).find((e) => e.type === 'pan-kurhanu');
+  const boss = () => E.livingEnemies(s).find((e) => e.type === 'pan-kurhanu' || e.type === 'dwor');
   const byType = (t) => heroes.find((h) => h.type === t && h.hp > 0);
   // runy
   for (const d of s.dice) {
@@ -24,7 +24,7 @@ function botRound(s, smart) {
     const tryAttack = () => {
       const t = E.attackTargets(s, h);
       if (!t.length) return false;
-      const pick = t.find((e) => e.type === 'pan-kurhanu') || t.sort((a, b) => a.hp - b.hp)[0];
+      const pick = t.find((e) => e.type === 'pan-kurhanu' || e.type === 'dwor') || t.sort((a, b) => a.hp - b.hp)[0];
       E.heroAttack(s, h.id, pick.id);
       return true;
     };
@@ -166,4 +166,37 @@ for (const fala of ['fala-1', 'fala-2', 'fala-3']) for (const [nazwa, ob] of OBR
     const d = s.units.find((u) => u.type === 'dlugi-dom'); rany += 1 - d.hp / d.maxHp;
   }
   console.log(`obrona ${fala} ${nazwa.padEnd(32)} wygrane ${Math.round(100 * win / M3)}%, Długi Dom padł w ${Math.round(100 * dom / M3)}%, średnio stracił ${Math.round(100 * rany / M3)}% życia`);
+}
+
+// Wioski jarłów: drużyna rozwinięta mniej więcej tak, jak przy odblokowaniu danego jarła.
+const JARLOWIE = [
+  ['jarl-1', { poz: 4, zycie: 3, atak: 1 }, { zycie: 3, atak: 1 }],
+  ['jarl-2', { poz: 6, zycie: 5, atak: 1 }, { zycie: 5, atak: 2 }],
+  ['jarl-3', { poz: 8, zycie: 7, atak: 2 }, { zycie: 7, atak: 3 }],
+];
+for (const [poz, rw, premie] of JARLOWIE) for (const [nazwa, odd] of [['bez armii', []], ['3 oddziały', ['tarczownicy', 'lucznicy', 'woje']], ['5 oddziałów', ['tarczownicy', 'berserkerzy', 'lucznicy', 'oszczepnicy', 'woje']]]) {
+  let win = 0, czas = 0;
+  const M4 = Math.min(N, 150);
+  for (let i = 0; i < M4; i++) {
+    const team = teams[i % teams.length];
+    const rozwoj = Object.fromEntries(team.map((k) => [k, rw]));
+    const s = E.newBattle(i * 6151 + 11, team, poz, premie, { rozwoj, oddzialy: odd, scenariusz: 'wioska' });
+    E.startRound(s);
+    let guard = 0;
+    while (!s.result && guard++ < 50) {
+      botRound(s, true);
+      if (s.result) break;
+      E.resolveEnemyTurn(s);
+      const seen = new Set();
+      for (const u of s.units.filter((u) => u.hp > 0)) {
+        const k = key(u.c, u.r);
+        if (seen.has(k)) throw new Error('Dwie jednostki na polu ' + k);
+        if (u.side === 'hero' && s.map[u.r][u.c] === 'W') throw new Error('Drużyna na palisadzie jarla ' + k);
+        seen.add(k);
+      }
+    }
+    if (!s.result) throw new Error('Wioska bez wyniku');
+    win += s.result === 'win'; czas += s.round;
+  }
+  console.log(`wioska ${poz} ${nazwa.padEnd(12)} wygrane ${Math.round(100 * win / M4)}%, średnio rund ${(czas / M4).toFixed(1)}`);
 }

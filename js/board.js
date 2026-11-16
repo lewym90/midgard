@@ -118,7 +118,8 @@ export class Board {
     // wał palisady: pale rysowane na polach wału (po wszystkich heksach, żeby zachodziły na sąsiadów)
     const pal = this.img['bud-palisada'];
     for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
-      if (!TERRAIN[this.view.map[r][c]].wal) continue;
+      const tt = TERRAIN[this.view.map[r][c]];
+      if (!tt.wal && !tt.walWroga) continue;
       const [x, y] = center(c, r, s);
       if (pal) { const w = s * 1.9, h = (w * pal.height) / pal.width; g.drawImage(pal, x - w / 2, y - h * 0.62, w, h); }
       else { g.fillStyle = '#5a4026'; for (let i = -2; i <= 2; i++) g.fillRect(x + i * s * 0.3 - s * 0.1, y - s * 0.55, s * 0.2, s * 0.9); }
@@ -471,7 +472,8 @@ export class Board {
 
   // Budowla w obronie osady: obrazek budynku na polu zamiast żetonu, pasek życia pod spodem.
   _budowla(g, u, x, y, s, a) {
-    const d = jednostka(u.type), v = this.view, t = this.t;
+    const wrog = u.side === 'enemy';
+    const d = wrog ? ENEMIES[u.type] : jednostka(u.type), v = this.view, t = this.t;
     const img = this.img['bud-' + d.sprite];
     const pulse = 0.5 + 0.5 * Math.sin(t * 4);
     const W = s * (u.type === 'dlugi-dom' ? 2.2 : u.type === 'brama' ? 1.9 : 1.6);
@@ -479,7 +481,11 @@ export class Board {
     g.globalAlpha = (a.alpha ?? 1) * (u.hp > 0 ? 1 : 0.4);
     g.fillStyle = 'rgba(0,0,0,0.5)';
     g.beginPath(); g.ellipse(x, y + s * 0.3, W * 0.42, s * 0.32, 0, 0, Math.PI * 2); g.fill();
-    if (this.ui.selected === u.id || (this.ui.runeTarget && u.hp > 0)) {
+    if (this.ui.attackable.has(u.id)) {
+      g.strokeStyle = `rgba(240,80,60,${0.5 + 0.5 * pulse})`; g.lineWidth = s * 0.07;
+      g.beginPath(); g.ellipse(x, y + s * 0.25, W * 0.5, s * 0.45, 0, 0, Math.PI * 2); g.stroke();
+    }
+    if (!wrog && (this.ui.selected === u.id || (this.ui.runeTarget && u.hp > 0))) {
       g.strokeStyle = `rgba(242,211,138,${0.45 + 0.55 * pulse})`; g.lineWidth = s * 0.07;
       g.beginPath(); g.ellipse(x, y + s * 0.25, W * 0.5, s * 0.45, 0, 0, Math.PI * 2); g.stroke();
     }
@@ -494,9 +500,9 @@ export class Board {
     g.fillStyle = 'rgba(8,6,5,0.92)'; this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.fill();
     const ratio = Math.max(0, u.hp / u.maxHp);
     g.save(); this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.clip();
-    g.fillStyle = ratio <= 0.34 ? '#b5352a' : '#7d8a96'; g.fillRect(x - pw / 2, py - ph / 2, pw * ratio, ph);
+    g.fillStyle = wrog ? '#8e2016' : ratio <= 0.34 ? '#b5352a' : '#7d8a96'; g.fillRect(x - pw / 2, py - ph / 2, pw * ratio, ph);
     g.restore();
-    g.strokeStyle = 'rgba(220,230,240,0.6)'; g.lineWidth = 1; this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.stroke();
+    g.strokeStyle = wrog ? 'rgba(200,80,60,0.7)' : 'rgba(220,230,240,0.6)'; g.lineWidth = 1; this._pill(g, x - pw / 2, py - ph / 2, pw, ph); g.stroke();
     g.fillStyle = '#fff8ec'; g.font = `700 ${Math.round(ph * 0.78)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(`${u.hp}`, x, py + ph * 0.04);
     if (u.shield > 0) {
@@ -506,9 +512,20 @@ export class Board {
       g.fillStyle = '#e4f3ff'; g.font = `700 ${Math.round(sr * 1.15)}px Cinzel, serif`; g.fillText(String(u.shield), sx, py + 1);
     }
     if (d.cel && u.hp > 0) {
+      const napis = wrog ? 'CEL' : 'BROŃCIE';
       g.font = `700 ${Math.round(Math.max(10, s * 0.24))}px Cinzel, serif`; g.textBaseline = 'alphabetic';
-      g.lineWidth = Math.max(2, s * 0.05); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.fillStyle = '#f2d38a';
-      g.strokeText('BROŃCIE', x, y - s * 0.95); g.fillText('BROŃCIE', x, y - s * 0.95);
+      g.lineWidth = Math.max(2, s * 0.05); g.strokeStyle = 'rgba(0,0,0,0.9)'; g.fillStyle = wrog ? '#ffb4a6' : '#f2d38a';
+      const ly = wrog ? py + ph * 1.35 : y - s * 0.95; // u wroga pod paskiem życia, żeby nie zasłaniały go żetony
+      g.strokeText(napis, x, ly); g.fillText(napis, x, ly);
+    }
+    // numer zamiaru (wieża jarla)
+    const it = wrog && v.intents && v.intents.find((i) => i.unitId === u.id);
+    if (it) {
+      const bx = x - W * 0.42, by = y - s * 0.55, br = Math.max(8, s * 0.22);
+      g.fillStyle = '#1b1714'; g.strokeStyle = it.canceled ? '#777' : '#d64a3c'; g.lineWidth = Math.max(1, s * 0.03);
+      g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = '#efe4cc'; g.font = `700 ${Math.round(br * 1.15)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(it.order), bx, by + 1);
     }
     g.restore();
   }
@@ -524,7 +541,7 @@ export class Board {
       const [x, y] = this.unitPos(u);
       const boss = u.side === 'enemy' && ENEMIES[u.type].boss;
       const R = s * (boss ? 0.8 : u.oddzial ? 0.6 : 0.7) * (a.scale ?? 1);
-      if (u.budowla) { this._budowla(g, u, x, y, s, a); continue; }
+      if (u.budowla || (u.side === 'enemy' && ENEMIES[u.type].budowla)) { this._budowla(g, u, x, y, s, a); continue; }
       g.save();
       g.globalAlpha = a.alpha ?? 1;
       // cień
@@ -570,11 +587,11 @@ export class Board {
         if (u.side === 'enemy') { g.fillStyle = 'rgba(40,70,110,0.14)'; g.fillRect(x - R, y - R, 2 * R, 2 * R); }
         if (u.side === 'hero' && u.moveLeft === 0 && u.attacked && v.phase === 'narada') { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x - R, y - R, 2 * R, 2 * R); }
         g.restore();
-      } else if (u.oddzial) {
-        // zastępczy żeton oddziału, dopóki nie ma grafiki
-        g.fillStyle = '#2a2219'; g.beginPath(); g.arc(x, y, R * 0.86, 0, Math.PI * 2); g.fill();
+      } else if (u.oddzial || u.side === 'enemy') {
+        // zastępczy żeton, dopóki nie ma grafiki
+        g.fillStyle = u.side === 'enemy' ? '#2a1512' : '#2a2219'; g.beginPath(); g.arc(x, y, R * 0.86, 0, Math.PI * 2); g.fill();
         g.fillStyle = '#e9d9b4'; g.font = `700 ${Math.round(R * 0.9)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(jednostka(u.type).name[0], x, y + R * 0.04);
+        g.fillText((u.side === "enemy" ? ENEMIES[u.type] : jednostka(u.type)).name[0], x, y + R * 0.04);
       }
       if (u.side === 'enemy') {
         g.strokeStyle = 'rgba(190,40,30,0.85)'; g.lineWidth = Math.max(1, s * 0.03);
@@ -607,7 +624,7 @@ export class Board {
         g.strokeStyle = `rgba(166,207,233,${0.5 + 0.4 * pulse})`; g.lineWidth = s * 0.05; g.setLineDash([s * 0.1, s * 0.08]);
         g.beginPath(); g.arc(x, y, R + s * 0.9, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
       }
-      if (boss && u.hp > 0) {
+      if (ENEMIES[u.type] && ENEMIES[u.type].cel && u.side === 'enemy' && v.scenario !== 'obrona' && u.hp > 0) {
         const mx = x, my = y - R - s * 0.32;
         g.fillStyle = '#f2d38a'; g.strokeStyle = '#3a0c06'; g.lineWidth = Math.max(1, s * 0.03);
         g.beginPath(); g.moveTo(mx, my + s * 0.2); g.lineTo(mx - s * 0.16, my); g.lineTo(mx + s * 0.16, my); g.closePath(); g.fill(); g.stroke();

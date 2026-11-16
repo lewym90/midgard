@@ -7,6 +7,7 @@ export const TERRAIN = {
   'B': { id: 'bagno', name: 'Bagno', cost: 2, def: 0, img: 'bagno', desc: 'Ruch kosztuje 2.' },
   'S': { id: 'skaly', name: 'Skały', cost: 2, def: 1, img: 'skaly', range: 1, desc: 'Ruch kosztuje 2. Osłona: 1 obrażenie mniej. Ataki z dystansu sięgają o 1 pole dalej.' },
   'K': { id: 'kurhan', name: 'Kurhan', cost: 99, def: 0, img: 'kurhan', blocked: true, desc: 'Nie da się wejść. Stąd wstają umarli.' },
+  'W': { id: 'wal-jarla', name: 'Palisada jarla', cost: 2, def: 0, img: 'snieg', walWroga: true, desc: 'Drużyna nie przejdzie przez palisadę jarla. Trzeba rozbić bramę albo strzelać nad palami.' },
   'P': { id: 'wal', name: 'Wał palisady', cost: 2, def: 2, img: 'snieg', wal: true, desc: 'Trupy nie przejdą przez palisadę. Wasi przechodzą (ruch kosztuje 2), a stojący na wale otrzymuje 2 obrażenia mniej.' },
 };
 
@@ -111,7 +112,17 @@ export const NAMES = {
 export const ENEMIES = {
   draugr: { name: 'Draugr', hp: 6, move: 2, atk: 3, range: 1, armor: 0, desc: 'Wstały z kurhanu trup. Idzie do najbliższego żywego.' },
   lucznik: { name: 'Draugr łucznik', hp: 3, move: 2, atk: 2, range: 3, armor: 0, desc: 'Strzela z dystansu i trzyma się z dala od ostrzy.' },
-  'pan-kurhanu': { name: 'Pan Kurhanu', hp: 20, move: 2, atk: 5, range: 1, armor: 1, boss: true, desc: 'Dawny wódz pogrzebany z bronią. Pancerz: każdy cios zadaje mu 1 obrażenie mniej. Co drugą rundę przyzywa draugra.' },
+  'pan-kurhanu': { name: 'Pan Kurhanu', hp: 20, move: 2, atk: 5, range: 1, armor: 1, boss: true, cel: true, desc: 'Dawny wódz pogrzebany z bronią. Pancerz: każdy cios zadaje mu 1 obrażenie mniej. Co drugą rundę przyzywa draugra.' },
+  // ludzie jarłów, którzy przeszli na stronę zimy
+  huskarl: { name: 'Huskarl', hp: 8, move: 2, atk: 3, range: 1, armor: 0, zywy: true, desc: 'Zbrojny człowiek jarla. Idzie do najbliższego wroga.' },
+  'lucznik-jarla': { name: 'Łucznik jarla', hp: 4, move: 2, atk: 2, range: 3, armor: 0, zywy: true, desc: 'Strzela z dystansu, najchętniej zza palisady.' },
+  'jarl-ketil': { name: 'Ketil Jednooki', hp: 16, move: 2, atk: 4, range: 1, armor: 1, boss: true, zywy: true, desc: 'Jarl, który pierwszy przyjął dary zimy. Pancerz 1.' },
+  'jarl-ragna': { name: 'Ragna Siwa', hp: 18, move: 2, atk: 3, range: 3, armor: 0, boss: true, zywy: true, desc: 'Jarlica łuczniczka. Strzela na 3 pola.' },
+  'jarl-thorgrim': { name: 'Thorgrim Lodowy Kieł', hp: 22, move: 3, atk: 5, range: 1, armor: 1, boss: true, zywy: true, desc: 'Najgroźniejszy z jarłów Hryma. Pancerz 1, szybki.' },
+  // budowle jarła: nie ruszają się
+  dwor: { name: 'Dwór jarla', hp: 24, move: 0, atk: 0, range: 1, armor: 1, budowla: true, cel: true, sprite: 'dlugi_dom-2', desc: 'Serce wioski. Gdy dwór padnie, ludzie jarla się poddają. Pancerz 1.' },
+  'brama-jarla': { name: 'Brama jarla', hp: 14, move: 0, atk: 0, range: 1, armor: 1, budowla: true, sprite: 'brama', desc: 'Zamyka palisadę jarla. Ludzie jarla przechodzą, wy musicie ją rozbić. Pancerz 1.' },
+  'wieza-jarla': { name: 'Wieża jarla', hp: 8, move: 0, atk: 2, range: 3, armor: 0, budowla: true, sprite: 'wieza', desc: 'Strzela na 3 pola. Nie rusza się.' },
 };
 
 export const RUNES = {
@@ -131,6 +142,7 @@ const L = (c, r) => ({ type: 'lucznik', at: [c, r] });
 const BOSS = { type: 'pan-kurhanu', at: [8, 4] };
 export const SCENARIO = {
   id: 'kurhan',
+  rezerwa: 'W kurhanie czeka jeszcze', rezerwaRzecz: ['trup', 'trupy', 'trupów'], przybycie: 'z kurhanu wstanie',
   title: 'Kurhan nad fiordem',
   goal: 'Zgładźcie Pana Kurhanu, zanim zima zabierze pole bitwy.',
   maxRounds: 10,
@@ -200,6 +212,7 @@ export const SCENARIO = {
 // Mapę składa silnik: '|' to kolumna palisady (wał albo śnieg zależnie od liczby odcinków w osadzie).
 export const OBRONA = {
   id: 'obrona',
+  rezerwa: 'W lesie czeka jeszcze', rezerwaRzecz: ['trup', 'trupy', 'trupów'], przybycie: 'z lasu wyjdzie',
   title: 'Obrona osady',
   goal: 'Utrzymajcie Długi Dom do świtu: przetrwajcie 8 rund albo rozbijcie wszystkie trupy.',
   maxRounds: 8,
@@ -273,4 +286,86 @@ export const OBRONA = {
   loseTime: '',
 };
 
-export const SCENARIOS = { kurhan: SCENARIO, obrona: OBRONA };
+// Najazd na wioskę jarla: drużyna atakuje od zachodu, wioska broni się za palisadą. Cel: zburzyć dwór.
+const H_ = (c, r) => ({ type: 'huskarl', at: [c, r] });
+const LJ = (c, r) => ({ type: 'lucznik-jarla', at: [c, r] });
+const bud = (type, c, r, hp) => ({ type, at: [c, r], hp });
+export const WIOSKA = {
+  id: 'wioska',
+  title: 'Wioska jarla',
+  goal: 'Zburzcie dwór jarla, zanim zwoła posiłki z sąsiednich osad (10 rund).',
+  rezerwa: 'W dworze czeka jeszcze', rezerwaRzecz: ['wojownik', 'wojowników', 'wojowników'], przybycie: 'z dworu wyjdzie',
+  maxRounds: 10,
+  frostStart: 99,
+  frostDamage: 0,
+  celWroga: 'dwor',
+  spawnOrigin: [9, 3],
+  map: [
+    'L....S.W..L',
+    '.....~.W...',
+    '..S....W...',
+    '...........',
+    '..L....W...',
+    '.....~.W...',
+    'LL...S.W..L',
+  ],
+  heroSlots: [[1, 2], [1, 3], [1, 4]],
+  troopSlots: [[0, 3], [2, 2], [2, 4], [0, 2], [0, 4]],
+  // jarl zwołuje ludzi na widok wojska: za każdy oddział jeden huskarl więcej i dwór mocniejszy
+  troopBossHp: 3,
+  troopWaves: [[2, 'huskarl', [9, 2]], [3, 'huskarl', [9, 4]], [4, 'lucznik-jarla', [8, 2]], [5, 'huskarl', [9, 2]], [6, 'huskarl', [9, 4]],
+    [3, 'huskarl', [10, 3]], [4, 'huskarl', [10, 2]], [5, 'lucznik-jarla', [8, 4]], [6, 'huskarl', [10, 4]], [7, 'huskarl', [10, 3]]],
+  troopWavesNaOddzial: 1,
+  levels: {
+    'jarl-1': {
+      name: 'Ketil Jednooki', desc: 'Mała wioska za jedną wieżą.',
+      bossHp: 18, summons: 0,
+      waves: {
+        1: [bud('dwor', 9, 3, 26), bud('brama-jarla', 7, 3, 14), bud('wieza-jarla', 8, 1, 10), { type: 'jarl-ketil', at: [9, 2] },
+          H_(5, 2), H_(5, 4), H_(6, 3), LJ(8, 4)],
+        2: [H_(9, 4)],
+        3: [LJ(8, 2), H_(9, 2)],
+        5: [H_(9, 4), H_(9, 2)],
+        7: [H_(9, 4), LJ(10, 3)],
+      },
+    },
+    'jarl-2': {
+      name: 'Ragna Siwa', desc: 'Warowna wioska z dwiema wieżami i łucznikami.',
+      bossHp: 22, summons: 0,
+      waves: {
+        1: [bud('dwor', 9, 3, 34), bud('brama-jarla', 7, 3, 20), bud('wieza-jarla', 8, 1, 12), bud('wieza-jarla', 8, 5, 12), { type: 'jarl-ragna', at: [9, 2] },
+          H_(5, 2), H_(5, 4), H_(6, 3), H_(4, 3), LJ(8, 2), LJ(8, 4)],
+        2: [H_(9, 4), LJ(10, 3)],
+        3: [H_(9, 2), H_(10, 4)],
+        4: [LJ(10, 2)],
+        5: [H_(9, 2), H_(9, 4)],
+        6: [LJ(10, 3)],
+        7: [H_(9, 2), H_(9, 4)],
+      },
+    },
+    'jarl-3': {
+      name: 'Thorgrim Lodowy Kieł', desc: 'Twierdza jarla Hryma. Dwie wieże, mocna brama i wielu ludzi.',
+      bossHp: 28, summons: 0,
+      waves: {
+        1: [bud('dwor', 9, 3, 44), bud('brama-jarla', 7, 3, 26), bud('wieza-jarla', 8, 1, 14), bud('wieza-jarla', 8, 5, 14), { type: 'jarl-thorgrim', at: [9, 2] },
+          H_(5, 2), H_(5, 4), H_(6, 3), H_(4, 3), H_(6, 1), H_(6, 5), LJ(8, 2), LJ(8, 4)],
+        2: [H_(9, 4), LJ(10, 3)],
+        3: [H_(9, 2), H_(10, 4), LJ(10, 2)],
+        4: [H_(9, 4), H_(10, 3)],
+        5: [H_(9, 2), H_(9, 4), LJ(10, 3)],
+        6: [H_(10, 2), H_(10, 4)],
+        7: [H_(9, 2), H_(9, 4), LJ(10, 3)],
+      },
+    },
+  },
+  intro: [
+    'Nie wszyscy jarłowie walczą z zimą. Niektórzy przyjęli jej dary: mróz, który nie zabija ich ludzi, i umarłych, którzy pilnują ich granic.',
+    'Ich wioski są bogate w srebro i żelazo, bo nikt nie śmiał ich tknąć. Do dziś.',
+    'Rozbijcie bramę, zburzcie dwór. Reszta sama się podda.',
+  ],
+  win: 'Dach dworu wali się w płomieniach. Ludzie jarla rzucają broń w śnieg, a wasi wynoszą ze spichlerzy wszystko, co da się unieść. Ta wioska długo nie podniesie głowy.',
+  lose: 'Ostatni z drużyny pada pod palisadą. Jarl każe zatknąć wasze tarcze na palach, żeby inni widzieli, jak kończą ci, którzy przychodzą bez zaproszenia.',
+  loseTime: 'Z pobliskich osad nadciągają ludzie jarla. Dwór wciąż stoi, a wy musicie się wycofać, zanim zamkną was w kotle.',
+};
+
+export const SCENARIOS = { kurhan: SCENARIO, obrona: OBRONA, wioska: WIOSKA };

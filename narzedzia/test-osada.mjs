@@ -156,3 +156,24 @@ console.log('premie bitwy (pusta osada):', JSON.stringify(O.premieBitwy(o2)));
   a.budynki.find((b) => b.typ === 'dlugi_dom').poz = 4;
   ok(O.falaKlucz(a) === 'fala-2' && O.silaFali(a) >= 70, 'DD4: wielka fala');
 }
+
+// ---------- wioski jarłów (E5) ----------
+{
+  const t = 20_000_000;
+  const a = O.nowaOsada(t);
+  ok(O.czyMoznaNajechac(a, 'kurhan', t) === null, 'kurhan zawsze dostępny');
+  ok(O.czyMoznaNajechac(a, 'jarl-ketil', t).includes('poziomie 3'), 'Ketil wymaga DD3');
+  a.budynki.find((b) => b.typ === 'dlugi_dom').poz = 5;
+  ok(O.czyMoznaNajechac(a, 'jarl-ketil', t) === null, 'DD5: Ketil dostępny');
+  ok(O.czyMoznaNajechac(a, 'jarl-ragna', t).includes('Ketil'), 'Ragna wymaga pokonania Ketila');
+  ok(O.lupJarla(a, 'jarl-ketil', false).srebro === 0, 'porażka z jarlem: bez łupu');
+  const l1 = O.rozliczJarla(a, 'jarl-ketil', true, t);
+  ok(l1.srebro === 240 && l1.slawa === 60, 'pierwsza wygrana z Ketilem: 240 srebra, podwójna sława');
+  ok(O.czyMoznaNajechac(a, 'jarl-ketil', t + 1).includes('odbudowuje'), 'wioska odpoczywa 8 h');
+  ok(O.czyMoznaNajechac(a, 'jarl-ketil', t + 8 * H + 1) === null, 'po 8 h znów można');
+  ok(O.lupJarla(a, 'jarl-ketil', true).slawa === 30, 'kolejna wygrana: zwykła sława');
+  ok(O.czyMoznaNajechac(a, 'jarl-ragna', t) === null, 'po Ketilu Ragna dostępna');
+  ok(O.czyMoznaNajechac(a, 'jarl-thorgrim', t).includes('poziomie 7'), 'Thorgrim wymaga DD7');
+  ok(O.XP_WYPRAWY['jarl-3'] === 210, 'doświadczenie za Thorgrima');
+  const stara = O.nowaOsada(t); delete stara.jarlowie; O.napraw(stara); ok(stara.jarlowie && typeof stara.jarlowie === 'object', 'stara osada dostaje jarłów');
+}

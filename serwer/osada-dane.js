@@ -172,6 +172,7 @@ export function napraw(o) {
   if (!o.wojsko) o.wojsko = {};
   if (!o.szkolenie) o.szkolenie = [];
   if (!o.raporty) o.raporty = [];
+  if (!o.jarlowie) o.jarlowie = {};
   return o;
 }
 
@@ -460,7 +461,7 @@ export function przygotujWyprawe(o, druzyna, oddzialy, teraz) {
   return { druzyna: druzyna.slice(), oddzialy: lista, rozwoj, premie: premieBitwy(o) };
 }
 
-export const XP_WYPRAWY = { wedrowiec: 40, wojownik: 70, ragnarok: 120 };
+export const XP_WYPRAWY = { wedrowiec: 40, wojownik: 70, ragnarok: 120, 'jarl-1': 90, 'jarl-2': 140, 'jarl-3': 210 };
 // Rozlicza drużynę: doświadczenie, Valhalla dla poległych, utracone oddziały.
 // polegli: lista bohaterów, którzy padli; ocaleli: lista typów oddziałów, które wróciły.
 export function rozliczDruzyne(o, w, wygrana, polegli, ocaleli, teraz) {
@@ -589,4 +590,56 @@ export function zakonczObrone(o, id, wygrana, polegli, ocaleli, teraz) {
   const druzyna = rozliczDruzyne(o, w, wygrana, polegli, ocaleli, teraz);
   const raport = rozstrzygnijNajazd(o, teraz, 'bitwa', wygrana);
   return { druzyna, raport };
+}
+
+// ======================================================================
+// CELE NA MAPIE MIDGARDU (E5): kurhan i wioski jarłów
+// ======================================================================
+export const ODPOCZYNEK_JARLA = 8 * H; // po zdobyciu wioska odbudowuje się
+export const CELE = {
+  kurhan: { nazwa: 'Kurhan nad fiordem', scenariusz: 'kurhan', dd: 1 },
+  'jarl-ketil': {
+    nazwa: 'Wioska Ketila Jednookiego', jarl: 'Ketil Jednooki', scenariusz: 'wioska', poziom: 'jarl-1', dd: 3, wymaga: null, mnoznik: 3, slawa: 30,
+    opis: 'Mała wioska nad rzeką. Ketil pierwszy przyjął dary zimy i teraz trzyma się za jedną wieżą i bramą.',
+  },
+  'jarl-ragna': {
+    nazwa: 'Wioska Ragny Siwej', jarl: 'Ragna Siwa', scenariusz: 'wioska', poziom: 'jarl-2', dd: 5, wymaga: 'jarl-ketil', mnoznik: 5, slawa: 50,
+    opis: 'Warowna osada na południowym brzegu. Dwie wieże i łucznicy, a sama Ragna strzela lepiej niż ktokolwiek w Midgardzie.',
+  },
+  'jarl-thorgrim': {
+    nazwa: 'Twierdza Thorgrima', jarl: 'Thorgrim Lodowy Kieł', scenariusz: 'wioska', poziom: 'jarl-3', dd: 7, wymaga: 'jarl-ragna', mnoznik: 8, slawa: 90,
+    opis: 'Twierdza pod lodowcem, ostatnia przed Lodową Ścianą. Thorgrim służy samemu Hrymowi.',
+  },
+};
+export const KOLEJNOSC_CELOW = ['kurhan', 'jarl-ketil', 'jarl-ragna', 'jarl-thorgrim'];
+export const wygraneZJarlem = (o, cel) => ((o.jarlowie || {})[cel] || {}).wygrane || 0;
+
+// null = można ruszać; inaczej powód (do pokazania na mapie)
+export function czyMoznaNajechac(o, cel, teraz) {
+  napraw(o);
+  const d = CELE[cel];
+  if (!d) return 'Nie ma takiego celu.';
+  if (poziomDD(o) < d.dd) return `Wymaga Długiego Domu na poziomie ${d.dd}.`;
+  if (d.wymaga && !wygraneZJarlem(o, d.wymaga)) return `Najpierw pokonaj: ${CELE[d.wymaga].jarl}.`;
+  const j = o.jarlowie[cel];
+  if (j && j.odpoczynek > teraz) return 'Wioska odbudowuje się po ostatnim najeździe.';
+  return null;
+}
+
+// Łup z wioski jarła: dużo srebra i żelaza. Pierwsze zwycięstwo: podwójna sława.
+export function lupJarla(o, cel, wygrana) {
+  const d = CELE[cel];
+  if (!wygrana) return { drewno: 0, zelazo: 0, zywnosc: 0, srebro: 0, slawa: 0 };
+  const m = d.mnoznik;
+  return { drewno: 150 * m, zelazo: 180 * m, zywnosc: 150 * m, srebro: 80 * m, slawa: d.slawa * (wygraneZJarlem(o, cel) ? 1 : 2) };
+}
+export function rozliczJarla(o, cel, wygrana, teraz) {
+  napraw(o);
+  const l = lupJarla(o, cel, wygrana);
+  if (wygrana) {
+    const j = o.jarlowie[cel] || { wygrane: 0, odpoczynek: 0 };
+    j.wygrane++; j.odpoczynek = teraz + ODPOCZYNEK_JARLA;
+    o.jarlowie[cel] = j;
+  }
+  return l;
 }

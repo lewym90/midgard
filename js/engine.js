@@ -90,7 +90,8 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
   odd.forEach((type, i) => nowa(type, S.troopSlots[i], ODDZIALY[type]));
   if (odd.length && S.troopWaves) {
     s.extraWaves = {};
-    odd.forEach((_, i) => { const [r, type, at] = S.troopWaves[i]; (s.extraWaves[r] = s.extraWaves[r] || []).push({ type, at }); });
+    const ile = Math.min(S.troopWaves.length, odd.length * (S.troopWavesNaOddzial || 1));
+    S.troopWaves.slice(0, ile).forEach(([r, type, at]) => { (s.extraWaves[r] = s.extraWaves[r] || []).push({ type, at }); });
     s.bossBonus = S.troopBossHp * odd.length;
   }
   if (ob) {
@@ -118,6 +119,7 @@ function enterCost(s, c, r, u = null) {
   const t = terrainAt(s, c, r);
   if (t.blocked || wardAt(s, c, r)) return Infinity;
   if (t.wal && (!u || u.side === 'enemy')) return Infinity; // wał: trupy nie przejdą (pole AI liczone jak dla trupów)
+  if (t.walWroga && u && u.side === 'hero') return Infinity; // palisada jarla: drużyna nie przejdzie
   if (u && u.type === 'mistrz-run') return 1;
   return t.cost;
 }
@@ -409,6 +411,7 @@ export function planIntents(s) {
   let order = 1;
   for (const e of livingEnemies(s)) {
     const d = ENEMIES[e.type];
+    if (d.budowla && !d.atk) continue; // dwór i brama nie mają zamiarów
     const map = reachable(s, e, d.move, reserved);
     const targets = heroOrderFor(s, e);
     if (!targets.length) break;
@@ -471,11 +474,13 @@ function freeNearBarrow(s, reserved = new Set(), prefer = null) {
   return all.length ? [all[0][1], all[0][2]] : null;
 }
 
-function spawn(s, type, at, ev) {
+function spawn(s, type, at, ev, hpWlasne = null) {
   const spot = freeNearBarrow(s, new Set(), at);
   if (!spot) return null;
   const d = ENEMIES[type];
-  const hp = d.boss ? level(s).bossHp + (s.bossBonus || 0) : d.hp;
+  // pan kurhanu: życie z poziomu (+ za oddziały); jarl: z poziomu; dwór: z fali (+ za oddziały)
+  const hp = d.budowla ? (hpWlasne || d.hp) + (d.cel ? s.bossBonus || 0 : 0)
+    : d.boss ? level(s).bossHp + (type === 'pan-kurhanu' ? s.bossBonus || 0 : 0) : d.hp;
   const u = { id: s.nextId++, side: 'enemy', type, c: spot[0], r: spot[1], hp, maxHp: hp };
   s.units.push(u);
   ev.push({ type: 'spawn', id: u.id, unit: clone(u) });
@@ -503,7 +508,7 @@ export function startRound(s) {
   }
   s.wards = (s.wards || []).filter((w) => w.until >= s.round);
   ev.push({ type: 'round', round: s.round });
-  for (const w of wavesFor(s, s.round)) spawn(s, w.type, w.at, ev);
+  for (const w of wavesFor(s, s.round)) spawn(s, w.type, w.at, ev, w.hp);
   s.phase = 'narada';
   planIntents(s);
   rollDice(s);
@@ -550,6 +555,17 @@ function checkEnd(s, ev) {
       for (const u of livingHeroes(s)) u.uciekl = true;
       ev.push({ type: 'end', result: 'lose' });
     } else if (s.round >= 1 && !livingEnemies(s).length && remainingInBarrow(s) === 0) wygrana(s, ev);
+    return;
+  }
+  if (scen(s).celWroga) {
+    // wioska jarla: wygrana, gdy padnie dwór; przegrana, gdy padną wszyscy bohaterowie
+    const cel = s.units.find((u) => u.type === scen(s).celWroga);
+    if (cel && cel.hp <= 0) wygrana(s, ev);
+    else if (!livingChampions(s).length) {
+      s.result = 'lose'; s.phase = 'koniec';
+      for (const u of livingHeroes(s)) u.uciekl = true;
+      ev.push({ type: 'end', result: 'lose' });
+    }
     return;
   }
   const boss = s.units.find((u) => u.type === 'pan-kurhanu');
