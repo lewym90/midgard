@@ -2,6 +2,8 @@
 Robi zrzuty i automatycznie sprawdza, czy nic nie wyjeżdża poza ekran i czy kluczowe elementy mają sensowne rozmiary.
 Uruchom (z katalogu gry, z serwerem gry pod :8765 i serwerem API pod :18900 z kontem Lewy/tajne123):
   python3 narzedzia/test-ekranow.py            → zrzuty w /tmp/ekrany, na końcu lista błędów
+Przed testem ustawia osadę testową (narzedzia/osada-testowa.mjs, dane w MIDGARD_DANE, domyślnie /tmp/mdane):
+Hala Wojów, wojsko w szkoleniu, zwerbowani bohaterowie i jeden w Valhalli — żeby sprawdzić ekrany armii.
 """
 import asyncio, os, sys
 from playwright.async_api import async_playwright
@@ -24,7 +26,7 @@ SPRAWDZ = """(() => {
     if (r.width > p.width + 2 || r.height > p.height + 2) out.push(`znak SVG większy niż pojemnik (${Math.round(r.width)}×${Math.round(r.height)} w ${Math.round(p.width)}×${Math.round(p.height)})`);
   }
   for (const el of document.querySelectorAll('.overlay:not([hidden]) .mapa-ramka, .overlay:not([hidden]) .sheet')) { const r = el.getBoundingClientRect(); if (r.right > vw + 2 || r.left < -2 || r.bottom > vh + 2 || r.top < -2) out.push(`okno ${el.className.split(' ')[0]} wychodzi poza ekran`); }
-  for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-plak, .o-med, .o-herb, .o-sheet')) {
+  for (const el of ekran.querySelectorAll('button, .panel, .topbar, .bottombar, .hero-card, .die, .intent, .o-plak, .o-med, .o-herb, .o-sheet, .stat, .coin, .o-chip, .troop-pick')) {
     if (!widoczny(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.right > vw + 2 || r.left < -2) out.push(`${el.className || el.tagName} wychodzi poza ekran w poziomie (${Math.round(r.left)}–${Math.round(r.right)} przy ${vw})`);
@@ -83,8 +85,15 @@ async def scenariusz(przegl, nazwa_p, tag, W, H):
     await pg.click('#o-mapa-btn'); await pg.wait_for_timeout(700)
     await zrzut('mapa')
     await pg.click('#mapa-zamknij'); await pg.wait_for_timeout(300)
+    await pg.click('#o-bohaterowie'); await pg.wait_for_timeout(600)
+    await zrzut('osada-bohaterowie')
+    await pg.evaluate("(() => { const o = window.midgard.osada; o._wybierzBudynek(o.o.budynki.find((b) => b.typ === 'hala_wojow').id); })()"); await pg.wait_for_timeout(600)
+    await zrzut('osada-hala')
+    await pg.click('#o-sheet-zamknij'); await pg.wait_for_timeout(300)
     await pg.click('#o-wyprawa'); await pg.wait_for_timeout(700)
     if await pg.is_visible('#ov-confirm'): await pg.click('#confirm-yes'); await pg.wait_for_timeout(700)
+    for _ in range(3):
+        if await pg.is_enabled('#team-troops [data-plus] >> nth=0'): await pg.click('#team-troops [data-plus] >> nth=0'); await pg.wait_for_timeout(150)
     await zrzut('druzyna')
     await pg.click('#btn-team-go'); await pg.wait_for_timeout(1500)
     await zrzut('wstep')
@@ -101,6 +110,8 @@ async def scenariusz(przegl, nazwa_p, tag, W, H):
 
 async def main():
     os.makedirs(OUT, exist_ok=True)
+    import subprocess
+    subprocess.run(['node', '--no-warnings', 'narzedzia/osada-testowa.mjs'], check=True, env={**os.environ, 'MIDGARD_DANE': os.environ.get('MIDGARD_DANE', '/tmp/mdane')})
     async with async_playwright() as p:
         przegladarki = [('safari', await p.webkit.launch()), ('chrome', await p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox']))]
         for nazwa_p, b in przegladarki:

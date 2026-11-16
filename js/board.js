@@ -1,6 +1,6 @@
 // Rysowanie planszy na płótnie: teren, nici Norn, żetony, animacje.
 import { center, corners, boardPixelSize, pixelToHex, key, SQRT3 } from './hex.js';
-import { TERRAIN, ENEMIES } from './data.js';
+import { TERRAIN, ENEMIES, jednostka } from './data.js';
 import { drawRune } from './runes.js';
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -471,7 +471,7 @@ export class Board {
       const u = a.unit || u0;
       const [x, y] = this.unitPos(u);
       const boss = u.side === 'enemy' && ENEMIES[u.type].boss;
-      const R = s * (boss ? 0.8 : 0.7) * (a.scale ?? 1);
+      const R = s * (boss ? 0.8 : u.oddzial ? 0.6 : 0.7) * (a.scale ?? 1);
       g.save();
       g.globalAlpha = a.alpha ?? 1;
       // cień
@@ -503,7 +503,8 @@ export class Board {
       }
       // obręcz
       const ring = g.createLinearGradient(x - R, y - R, x + R, y + R);
-      if (u.side === 'hero') { ring.addColorStop(0, '#fff0bf'); ring.addColorStop(0.45, '#c9962f'); ring.addColorStop(1, '#5b3d0c'); }
+      if (u.oddzial) { ring.addColorStop(0, '#f4ead8'); ring.addColorStop(0.45, '#9c8a6c'); ring.addColorStop(1, '#3b3125'); }
+      else if (u.side === 'hero') { ring.addColorStop(0, '#fff0bf'); ring.addColorStop(0.45, '#c9962f'); ring.addColorStop(1, '#5b3d0c'); }
       else if (boss) { ring.addColorStop(0, '#f0c66a'); ring.addColorStop(0.5, '#8d1f15'); ring.addColorStop(1, '#2a0a06'); }
       else { ring.addColorStop(0, '#9a9590'); ring.addColorStop(0.5, '#4a3f3a'); ring.addColorStop(1, '#151210'); }
       g.fillStyle = ring;
@@ -516,6 +517,11 @@ export class Board {
         if (u.side === 'enemy') { g.fillStyle = 'rgba(40,70,110,0.14)'; g.fillRect(x - R, y - R, 2 * R, 2 * R); }
         if (u.side === 'hero' && u.moveLeft === 0 && u.attacked && v.phase === 'narada') { g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x - R, y - R, 2 * R, 2 * R); }
         g.restore();
+      } else if (u.oddzial) {
+        // zastępczy żeton oddziału, dopóki nie ma grafiki
+        g.fillStyle = '#2a2219'; g.beginPath(); g.arc(x, y, R * 0.86, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#e9d9b4'; g.font = `700 ${Math.round(R * 0.9)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(jednostka(u.type).name[0], x, y + R * 0.04);
       }
       if (u.side === 'enemy') {
         g.strokeStyle = 'rgba(190,40,30,0.85)'; g.lineWidth = Math.max(1, s * 0.03);

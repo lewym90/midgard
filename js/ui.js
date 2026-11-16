@@ -1,14 +1,14 @@
 // Panele DOM: bohaterowie, nici Norn, runy, pasek górny, teksty zasad.
-import { HEROES, ENEMIES, RUNES, SCENARIO, HERO_ORDER, NAMES } from './data.js';
+import { HEROES, ENEMIES, RUNES, SCENARIO, HERO_ORDER, NAMES, ODDZIALY, ODDZIALY_ORDER, jednostka } from './data.js';
 import { runeSvg } from './runes.js';
-import { heroAttackValue, upcomingWaves, canUsePower, attackTargets, remainingInBarrow, bossAwakeAt, level } from './engine.js';
+import { heroAttackValue, upcomingWaves, canUsePower, attackTargets, remainingInBarrow, bossAwakeAt, level, wavesFor } from './engine.js';
 
 const $ = (id) => document.getElementById(id);
 
 const GEN = NAMES.gen;
 const FALLEN = NAMES.fallen;
 
-export const tokenUrl = (u) => `assets/img/${u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`;
+export const tokenUrl = (u) => `assets/img/${u.oddzial || ODDZIALY[u.type] ? 'oddzialy' : u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`;
 
 function plural(n, one, few, many) {
   if (n === 1) return one;
@@ -28,7 +28,9 @@ export function renderTop(v) {
     fr.innerHTML = `Mróz <small>od rundy ${SCENARIO.frostStart}</small>`;
   }
   let coins = '';
-  for (let i = 0; i < 3; i++) coins += `<span class="coin ${i < v.hamingja ? '' : 'spent'}">${runeSvg('N', 'r')}</span>`;
+  const ileMonet = Math.max(v.hamingja, 3 + ((v.premie && v.premie.hamingja) || 0));
+  if (ileMonet > 3) coins = `<span class="coin ${v.hamingja ? '' : 'spent'}">${runeSvg('N', 'r')}</span><span class="coin-ile">×${v.hamingja}</span>`;
+  else for (let i = 0; i < ileMonet; i++) coins += `<span class="coin ${i < v.hamingja ? '' : 'spent'}">${runeSvg('N', 'r')}</span>`;
   $('stat-hamingja').innerHTML = coins;
 }
 
@@ -36,19 +38,19 @@ export function renderHeroes(v, sel, handlers) {
   const box = $('panel-heroes');
   box.innerHTML = '';
   for (const u of v.units.filter((x) => x.side === 'hero')) {
-    const d = HEROES[u.type];
+    const d = jednostka(u.type);
     const dead = u.hp <= 0;
     const card = document.createElement('div');
-    card.className = 'hero-card' + (sel.heroId === u.id ? ' selected' : '') + (dead ? ' dead' : '') + (sel.dieId != null && !dead ? ' target-mode' : '');
+    card.className = 'hero-card' + (u.oddzial ? ' oddzial' : '') + (sel.heroId === u.id ? ' selected' : '') + (dead ? ' dead' : '') + (sel.dieId != null && !dead ? ' target-mode' : '');
     const ratio = u.hp / u.maxHp;
     const atk = heroAttackValue(v, u);
     const canAtk = !u.attacked && attackTargets(v, u).length > 0;
     const runeChips = Object.entries(u.runes).flatMap(([f, n]) => Array.from({ length: n }, () => `<span class="rune-chip" title="${RUNES[f].name}">${runeSvg(f)}</span>`)).join('');
     const powerOk = !dead && v.phase === 'narada' && canUsePower(v, u);
     card.innerHTML = `
-      <div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>
-      <div class="hero-name">${d.name}</div>
-      <div class="hero-role">${dead ? FALLEN[u.type] : d.role}</div>
+      ${u.oddzial ? `<div class="hero-avatar troop-av" style="--img:url(${tokenUrl(u)})"><span>${d.name[0]}</span></div>` : `<div class="hero-avatar" style="background-image:url(${tokenUrl(u)})"></div>`}
+      <div class="hero-name">${d.name}${u.poz ? ` <small class="hero-poz">poz. ${u.poz}</small>` : ''}</div>
+      <div class="hero-role">${dead ? (u.oddzial ? 'Rozbici' : FALLEN[u.type]) : d.role}</div>
       <div class="hp">
         <div class="hp-bar"><div class="hp-fill ${ratio <= 0.34 ? 'low' : ''}" style="width:${ratio * 100}%"></div></div>
         <span class="hp-num">${u.hp}/${u.maxHp}</span>
@@ -62,10 +64,10 @@ export function renderHeroes(v, sel, handlers) {
       </div>
       ${runeChips ? `<div class="hero-runes">${runeChips}</div>` : ''}
       ${u.guard ? '<div class="guard-on">Przyjmuje ciosy za sąsiadów</div>' : ''}
-      <div class="hero-power">
+      ${u.oddzial ? '' : `<div class="hero-power">
         <button class="btn btn-small" data-power="${u.id}" ${powerOk ? '' : 'disabled'}>${runeSvg('K', 'rune inline-rune')} ${d.power}</button>
         <div class="power-desc">${d.powerDesc} Wymaga runy Kenaz.</div>
-      </div>
+      </div>`}
       <div class="hero-passive">${d.passive}</div>`}
     `;
     card.addEventListener('click', (e) => {
@@ -160,10 +162,10 @@ export function renderButtons(v, undoCount, busy) {
 
 export function setHint(html) { $('hint').innerHTML = html; }
 
-export function renderAnsuz(onPick) {
+export function renderAnsuz(onPick, bezK = false) {
   const box = $('ansuz-choices');
   box.innerHTML = '';
-  for (const f of ['T', 'A', 'R', 'K', 'B']) {
+  for (const f of ['T', 'A', 'R', 'K', 'B'].filter((x) => !(bezK && x === 'K'))) {
     const b = document.createElement('button');
     b.className = 'die';
     b.innerHTML = runeSvg(f) + `<span class="die-name">${RUNES[f].short}</span>`;
@@ -209,6 +211,11 @@ export function rulesHtml() {
   <ul>
     ${HERO_ORDER.map((k) => HEROES[k]).map((h) => `<li><b>${h.name}</b> (życie ${h.hp}, ruch ${h.move}, atak ${h.atk}${h.range > 1 ? `, zasięg ${h.range}` : ''}). ${h.passive} Moc <i>${h.power}</i>: ${h.powerDesc}</li>`).join('')}
   </ul>
+  <h3>Oddziały z osady</h3>
+  <p>Na wyprawę z osady możesz zabrać oddziały wyszkolone w Hali Wojów. Ruszają się i walczą jak bohaterowie, mogą dostawać runy (poza Kenaz), ale nie mają mocy i nie dokładają run do rzutu. Kurhan czuje żywych: każdy oddział budzi jednego trupa więcej, a Pan Kurhanu ma 3 życia więcej. Oddział, który padnie, przepada. Gdy polegną wszyscy bohaterowie, oddziały się wycofują i bitwa jest przegrana.</p>
+  <ul>
+    ${ODDZIALY_ORDER.map((k) => ODDZIALY[k]).map((h) => `<li><b>${h.name}</b> (życie ${h.hp}, ruch ${h.move}, atak ${h.atk}${h.range > 1 ? `, zasięg ${h.range}` : ''}). ${h.passive}</li>`).join('')}
+  </ul>
   <h3>Wrogowie</h3>
   <ul>
     ${Object.values(ENEMIES).map((e) => `<li><b>${e.name}</b> (życie ${e.hp}, ruch ${e.move}, cios ${e.atk}${e.range > 1 ? `, zasięg ${e.range}` : ''}). ${e.desc}</li>`).join('')}
@@ -217,27 +224,50 @@ export function rulesHtml() {
   <p>Stuknij bohatera na planszy albo jego kartę. Złote pola pokazują, dokąd może pójść, a czerwone obręcze, kogo może zaatakować. Stuknij runę na dole, a potem bohatera, żeby mu ją dać. Stuknij wroga albo jego wpis w Niciach Norn, żeby podświetlić jego zamiar.</p>`;
 }
 
-export function renderTeam(picked, onToggle) {
+// status: { typ: { poz, blokada } } dla wyprawy z osady (blokada = powód, dla którego nie można wybrać)
+export function renderTeam(picked, onToggle, status = null) {
   const grid = $('team-grid');
   grid.innerHTML = '';
   grid.classList.toggle('full', picked.length >= 3);
   for (const k of HERO_ORDER) {
     const d = HEROES[k];
+    const st = status && status[k];
     const i = picked.indexOf(k);
     const b = document.createElement('button');
-    b.className = 'pick' + (i >= 0 ? ' on' : '');
+    b.className = 'pick' + (i >= 0 ? ' on' : '') + (st && st.blokada ? ' zablokowany' : '');
+    if (st && st.blokada) b.disabled = true;
     b.innerHTML = `
-      <div class="pick-art" style="background-image:url(assets/img/bohaterowie/${k}-karta.webp)">${i >= 0 ? `<span class="pick-num">${i + 1}</span>` : ''}</div>
+      <div class="pick-art" style="background-image:url(assets/img/bohaterowie/${k}-karta.webp)">${i >= 0 ? `<span class="pick-num">${i + 1}</span>` : ''}${st && st.poz ? `<span class="pick-poz">poz. ${st.poz}</span>` : ''}</div>
       <div class="pick-body">
         <div class="pick-name">${d.name}</div>
         <div class="pick-role">${d.role}</div>
-        <div class="pick-stats"><span>Życie <b>${d.hp}</b></span><span>Ruch <b>${d.move}</b></span><span>Atak <b>${d.atk}</b>${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span></div>
+        ${st && st.blokada ? `<div class="pick-blok">${st.blokada}</div>` : ''}
+        <div class="pick-stats"><span>Życie <b>${d.hp + ((st && st.zycie) || 0)}</b></span><span>Ruch <b>${d.move}</b></span><span>Atak <b>${d.atk + ((st && st.atak) || 0)}</b>${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span></div>
         <div class="pick-text">${d.passive}</div>
         <div class="pick-text"><b>${d.power}</b> (Kenaz): ${d.powerDesc}</div>
       </div>`;
     b.addEventListener('click', () => onToggle(k));
     grid.appendChild(b);
   }
+}
+
+// Wybór oddziałów na wyprawę. wojsko: { typ: ile }, wybrane: lista typów, limit: miejsca w bitwie.
+export function renderTroops(wojsko, wybrane, limit, onZmiana) {
+  const box = $('team-troops');
+  const typy = ODDZIALY_ORDER.filter((t) => wojsko[t] > 0);
+  box.hidden = !typy.length && !limit;
+  if (box.hidden) return;
+  const ile = (t) => wybrane.filter((x) => x === t).length;
+  box.innerHTML = `<h3 class="team-troops-t">Oddziały <small>${wybrane.length} / ${limit} miejsc</small></h3>
+    ${typy.length ? '' : '<p class="team-troops-pusto">Nie masz jeszcze wojska. Szkolisz je w Hali Wojów.</p>'}
+    <div class="team-troops-l">${typy.map((t) => { const d = ODDZIALY[t]; return `<div class="troop-pick">
+      <div class="troop-av" style="--img:url(assets/img/oddzialy/${t}-zeton.webp)"><span>${d.name[0]}</span></div>
+      <div class="troop-txt"><b>${d.name}</b><small>Życie ${d.hp} · Atak ${d.atk}${d.range > 1 ? ` · zasięg ${d.range}` : ''} · masz ${wojsko[t]}</small></div>
+      <div class="troop-ile"><button class="btn btn-small" data-minus="${t}" ${ile(t) ? '' : 'disabled'}>−</button><b>${ile(t)}</b>
+      <button class="btn btn-small" data-plus="${t}" ${ile(t) < wojsko[t] && wybrane.length < limit ? '' : 'disabled'}>+</button></div></div>`; }).join('')}</div>
+    ${wybrane.length ? `<p class="team-troops-pusto">Kurhan czuje żywych: ${wybrane.length} ${plural(wybrane.length, 'trup więcej', 'trupy więcej', 'trupów więcej')}, Pan Kurhanu silniejszy o ${SCENARIO.troopBossHp * wybrane.length} życia.</p>` : ''}`;
+  box.querySelectorAll('[data-plus]').forEach((b) => { b.onclick = () => onZmiana(b.dataset.plus, 1); });
+  box.querySelectorAll('[data-minus]').forEach((b) => { b.onclick = () => onZmiana(b.dataset.minus, -1); });
 }
 
 export function renderLevels(cur, onPick) {

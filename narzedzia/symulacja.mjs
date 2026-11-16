@@ -93,3 +93,37 @@ for (const smart of [false, true]) {
 }
 console.log('Wojownik, sprytny bot — % wygranych drużyn z danym bohaterem:');
 for (const [k, [w, n]] of Object.entries(perHero)) console.log('  ', k.padEnd(14), Math.round(100 * w / n) + '%');
+
+// Wyprawy z osady: rozwinięci bohaterowie i oddziały (sprawdza silnik z oddziałami i pokazuje wpływ armii).
+const WARIANTY = [
+  ['bez armii', {}, []],
+  ['2 × woje', {}, ['woje', 'woje']],
+  ['tarcz.+łucz.+oszcz.', {}, ['tarczownicy', 'lucznicy', 'oszczepnicy']],
+  ['poz. 5 + 5 oddziałów', { poz: 5, zycie: 4, atak: 1 }, ['tarczownicy', 'berserkerzy', 'lucznicy', 'oszczepnicy', 'woje']],
+];
+for (const lvl of ['wojownik', 'ragnarok']) for (const [nazwa, rw, odd] of WARIANTY) {
+  let win = 0, padlo = 0, wyslano = 0;
+  const M2 = Math.min(N, 150);
+  for (let i = 0; i < M2; i++) {
+    const team = teams[i % teams.length];
+    const rozwoj = Object.fromEntries(team.map((k) => [k, rw]));
+    const s = E.newBattle(i * 104729 + 7, team, lvl, null, { rozwoj, oddzialy: odd });
+    E.startRound(s);
+    let guard = 0;
+    while (!s.result && guard++ < 50) {
+      botRound(s, true);
+      if (s.result) break;
+      E.resolveEnemyTurn(s);
+      const seen = new Set();
+      for (const u of s.units.filter((u) => u.hp > 0)) {
+        const k = key(u.c, u.r);
+        if (seen.has(k)) throw new Error('Dwie jednostki na polu ' + k);
+        seen.add(k);
+      }
+    }
+    win += s.result === 'win';
+    const oddz = s.units.filter((u) => u.oddzial);
+    wyslano += oddz.length; padlo += oddz.filter((u) => u.hp <= 0).length;
+  }
+  console.log(`z osady ${lvl.padEnd(9)} ${nazwa.padEnd(22)} wygrane ${Math.round(100 * win / M2)}%` + (wyslano ? `, polegli z oddziałów ${Math.round(100 * padlo / wyslano)}%` : ''));
+}

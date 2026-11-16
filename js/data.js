@@ -51,10 +51,38 @@ export const HEROES = {
     power: 'Wilczy szał', powerDesc: '+3 do ataku do końca rundy.',
   },
 };
+// Oddziały z osady (szkolone w Hali Wojów). Walczą jak bohaterowie, ale bez mocy i nie dokładają run.
+export const ODDZIALY = {
+  woje: {
+    name: 'Woje', role: 'Oddział', hp: 6, move: 3, atk: 2, range: 1, oddzial: true,
+    passive: 'Zwykli wojownicy z osady. Tani i szybcy w szkoleniu.',
+  },
+  tarczownicy: {
+    name: 'Tarczownicy', role: 'Oddział', hp: 9, move: 2, atk: 1, range: 1, pancerz: 1, oddzial: true,
+    passive: 'Pancerz: każdy cios zadaje im 1 obrażenie mniej.',
+  },
+  lucznicy: {
+    name: 'Łucznicy', role: 'Oddział', hp: 4, move: 2, atk: 2, range: 3, oddzial: true,
+    passive: 'Strzelają na 3 pola. Słabi w zwarciu, trzymaj ich za tarczami.',
+  },
+  oszczepnicy: {
+    name: 'Oszczepnicy', role: 'Oddział', hp: 5, move: 3, atk: 2, range: 2, oddzial: true,
+    passive: 'Rzucają oszczepami na 2 pola.',
+  },
+  berserkerzy: {
+    name: 'Berserkerzy', role: 'Oddział', hp: 8, move: 3, atk: 3, range: 1, oddzial: true,
+    passive: 'Oddział w wilczych skórach. Najsilniejsi z wojska, ale drodzy w utrzymaniu.',
+  },
+};
+export const ODDZIALY_ORDER = ['woje', 'tarczownicy', 'lucznicy', 'oszczepnicy', 'berserkerzy'];
+// Dane jednostki po stronie drużyny: bohater albo oddział.
+export const jednostka = (type) => HEROES[type] || ODDZIALY[type];
+
 export const HERO_ORDER = ['berserker', 'tarczowniczka', 'volva', 'skald', 'jarl', 'mistrz-run', 'lowczyni', 'ulfhedinn'];
 export const NAMES = {
   nom: { berserker: 'Berserker', tarczowniczka: 'Tarczowniczka', volva: 'Völva', skald: 'Skald', jarl: 'Jarl', 'mistrz-run': 'Mistrz Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinn' },
-  gen: { berserker: 'Berserkera', tarczowniczka: 'Tarczowniczki', volva: 'Völvy', skald: 'Skalda', jarl: 'Jarla', 'mistrz-run': 'Mistrza Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinna' },
+  gen: { berserker: 'Berserkera', tarczowniczka: 'Tarczowniczki', volva: 'Völvy', skald: 'Skalda', jarl: 'Jarla', 'mistrz-run': 'Mistrza Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinna',
+    woje: 'wojów', tarczownicy: 'tarczowników', lucznicy: 'łuczników', oszczepnicy: 'oszczepników', berserkerzy: 'berserkerów' },
   fallen: { berserker: 'Poległ', tarczowniczka: 'Poległa', volva: 'Poległa', skald: 'Poległ', jarl: 'Poległ', 'mistrz-run': 'Poległ', lowczyni: 'Poległa', ulfhedinn: 'Poległ' },
 };
 
@@ -96,6 +124,10 @@ export const SCENARIO = {
     'LL..~~..LLL',
   ],
   heroSlots: [[1, 2], [1, 3], [0, 3]],
+  troopSlots: [[0, 2], [1, 4], [0, 4], [2, 1], [1, 1]],
+  // Kurhan czuje żywych: każdy oddział z osady budzi jednego trupa więcej (runda i miejsce po kolei).
+  troopBossHp: 3, // i Pan Kurhanu ma tyle życia więcej za każdy oddział
+  troopWaves: [[2, 'draugr', [9, 3]], [3, 'draugr', [9, 4]], [5, 'lucznik', [9, 2]], [2, 'draugr', [7, 1]], [6, 'draugr', [7, 5]]],
   levels: {
     wedrowiec: {
       name: 'Wędrowiec', desc: 'Na pierwszą bitwę i dla gości. 7 trupów, Pan Kurhanu słabszy i przyzywa raz.',

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as O from './osada-dane.js';
 
-const WERSJA = '1.2.0';
+const WERSJA = '1.3.0';
 const PORT = Number(process.env.PORT || 18900);
 const DANE = process.env.MIDGARD_DANE || './dane';
 const ORIGINS = (process.env.MIDGARD_ORIGINS || 'https://lewym90.github.io,http://localhost:8765,http://127.0.0.1:8765').split(',');
@@ -244,15 +244,24 @@ const trasy = {
       return { zebrane };
     });
   },
+  'POST /osada/werbuj': async (req) => { const b = await czytajJson(req); return zOsada(req, (o) => blad(O.werbuj(o, String(b.typ)))); },
+  'POST /osada/szkol': async (req) => { const b = await czytajJson(req); return zOsada(req, (o, t) => blad(O.szkol(o, String(b.typ), t))); },
+  'POST /osada/szkol/anuluj': (req) => zOsada(req, (o) => blad(O.anulujSzkolenie(o))),
   'POST /osada/wyprawa/start': async (req) => {
     const b = await czytajJson(req);
     return zOsada(req, (o, t) => {
       const poziom = O.LUP[b.poziom] ? b.poziom : 'wedrowiec';
+      // starsze wersje gry nie wysyłają drużyny: tylko premie, bez rozwoju i wojska
+      let p = { druzyna: null, oddzialy: [], rozwoj: {}, premie: O.premieBitwy(o) };
+      if (Array.isArray(b.druzyna)) {
+        p = O.przygotujWyprawe(o, b.druzyna.map(String), Array.isArray(b.oddzialy) ? b.oddzialy.map(String) : [], t);
+        if (p.blad) throw new Blad(400, p.blad);
+      }
       const id = crypto.randomBytes(8).toString('hex');
       const lista = Object.entries(o.wyprawy || {}).sort((a, c) => a[1].start - c[1].start);
       o.wyprawy = Object.fromEntries(lista.slice(-2));
-      o.wyprawy[id] = { start: t, poziom };
-      return { wyprawa: id, premie: O.premieBitwy(o) };
+      o.wyprawy[id] = { start: t, poziom, druzyna: p.druzyna, oddzialy: p.oddzialy };
+      return { wyprawa: id, premie: p.premie, rozwoj: p.rozwoj, oddzialy: p.oddzialy };
     });
   },
   'POST /osada/wyprawa/koniec': async (req) => {
@@ -264,7 +273,8 @@ const trasy = {
       delete o.wyprawy[String(b.id)];
       const wygrana = b.wynik === 'win';
       o.statystyki[wygrana ? 'wygrane' : 'przegrane']++;
-      return { lup: O.dodajLup(o, O.lup(w.poziom, wygrana)) };
+      const druzyna = O.rozliczDruzyne(o, w, wygrana, Array.isArray(b.polegli) ? b.polegli.map(String) : [], Array.isArray(b.ocaleli) ? b.ocaleli.map(String) : (w.oddzialy || []), t);
+      return { lup: O.dodajLup(o, O.lup(w.poziom, wygrana)), druzyna };
     });
   },
 
@@ -302,7 +312,7 @@ function zOsada(req, akcja) {
   db.exec('BEGIN IMMEDIATE');
   try {
     const w = db.prepare('SELECT dane FROM osady WHERE gracz_id = ?').get(s.id);
-    const o = w ? JSON.parse(w.dane) : O.nowaOsada(t);
+    const o = O.napraw(w ? JSON.parse(w.dane) : O.nowaOsada(t));
     const gotowe = O.uplyw(o, t);
     const wynik = akcja(o, t) || {};
     db.prepare('INSERT INTO osady (gracz_id, dane, zmieniona) VALUES (?, ?, ?) ON CONFLICT(gracz_id) DO UPDATE SET dane = excluded.dane, zmieniona = excluded.zmieniona').run(s.id, JSON.stringify(o), t);

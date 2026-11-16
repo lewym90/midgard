@@ -1,7 +1,7 @@
 // Zasady bitwy. Czysta logika bez DOM, żeby dało się ją testować.
 // Każda akcja zmienia stan i zwraca listę zdarzeń do animacji.
 
-import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO } from './data.js';
+import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO, ODDZIALY, jednostka } from './data.js';
 import { key, parseKey, distance, neighbors } from './hex.js';
 
 export const SAVE_VERSION = 2;
@@ -25,17 +25,21 @@ export const isFrozen = (s, c) => c < s.frost;
 export const unitAt = (s, c, r) => s.units.find((u) => u.hp > 0 && u.c === c && u.r === r);
 export const unitById = (s, id) => s.units.find((u) => u.id === id);
 export const livingHeroes = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0);
+// Bohaterowie bez oddziałów: od nich zależą runy i koniec bitwy.
+export const livingChampions = (s) => s.units.filter((u) => u.side === 'hero' && u.hp > 0 && !u.oddzial);
 export const livingEnemies = (s) => s.units.filter((u) => u.side === 'enemy' && u.hp > 0);
 export const nb = (s, c, r) => neighbors(c, r, cols(s), rows(s));
 
-export function unitDef(u) { return u.side === 'hero' ? HEROES[u.type] : ENEMIES[u.type]; }
+export function unitDef(u) { return u.side === 'hero' ? jednostka(u.type) : ENEMIES[u.type]; }
 
 // ---------- tworzenie bitwy ----------
 
 export const level = (s) => SCENARIO.levels[s.level];
 
-export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec', premie = null) {
+// opcje: { rozwoj: { typ: { poz, zycie, atak } }, oddzialy: ['woje', ...] } — z osady, dla wypraw
+export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec', premie = null, opcje = null) {
   const P = { zycie: 0, atak: 0, hamingja: 0, runy: 0, ...(premie || {}) };
+  const rozwoj = (opcje && opcje.rozwoj) || {};
   const s = {
     level: lvl,
     team: team.slice(),
@@ -59,15 +63,26 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
     bossAwakeRound: null,
     log: [],
   };
-  team.forEach((type, i) => {
-    const d = HEROES[type];
-    const at = SCENARIO.heroSlots[i];
-    s.units.push({
+  const nowa = (type, at, d, extra = {}) => {
+    const hp = d.hp + P.zycie + (extra.zycie || 0);
+    const u = {
       id: s.nextId++, side: 'hero', type, c: at[0], r: at[1],
-      hp: d.hp + P.zycie, maxHp: d.hp + P.zycie, moveLeft: d.move, attacked: false,
+      hp, maxHp: hp, moveLeft: d.move, attacked: false,
       runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false, bonusAtk: 0,
-    });
-  });
+    };
+    if (extra.atak) u.stalyAtak = extra.atak;
+    if (extra.poz) u.poz = extra.poz;
+    if (d.oddzial) u.oddzial = true;
+    s.units.push(u);
+  };
+  team.forEach((type, i) => nowa(type, SCENARIO.heroSlots[i], HEROES[type], rozwoj[type] || {}));
+  const odd = ((opcje && opcje.oddzialy) || []).filter((t) => ODDZIALY[t]).slice(0, SCENARIO.troopSlots.length);
+  odd.forEach((type, i) => nowa(type, SCENARIO.troopSlots[i], ODDZIALY[type]));
+  if (odd.length) {
+    s.extraWaves = {};
+    odd.forEach((_, i) => { const [r, type, at] = SCENARIO.troopWaves[i]; (s.extraWaves[r] = s.extraWaves[r] || []).push({ type, at }); });
+    s.bossBonus = SCENARIO.troopBossHp * odd.length;
+  }
   return s;
 }
 
@@ -145,8 +160,8 @@ export function rangeOf(s, u) {
 }
 
 export function heroAttackValue(s, u) {
-  const d = HEROES[u.type];
-  let v = d.atk + 2 * u.runes.T + (u.bonusAtk || 0) + ((s && s.premie && s.premie.atak) || 0);
+  const d = jednostka(u.type);
+  let v = d.atk + 2 * u.runes.T + (u.bonusAtk || 0) + (u.stalyAtak || 0) + ((s && s.premie && s.premie.atak) || 0);
   if (u.type === 'berserker') v += Math.floor((u.maxHp - u.hp) / 4);
   if (u.type !== 'skald' && s && adjacentHeroes(s, u).some((h) => h.type === 'skald')) v += 1;
   return v;
@@ -168,7 +183,9 @@ export function heroDamage(s, target, base) {
   if (target.type !== 'tarczowniczka' && adjacentHeroes(s, target).some((h) => h.type === 'tarczowniczka')) {
     shieldmaid = 1; parts.push('Tarczowniczka −1');
   }
-  const dmg = Math.max(1, base - wall - t.def - shieldmaid);
+  const pancerz = jednostka(target.type).pancerz || 0;
+  if (pancerz) parts.push(`pancerz −${pancerz}`);
+  const dmg = Math.max(1, base - wall - t.def - shieldmaid - pancerz);
   return { dmg, parts };
 }
 
@@ -182,7 +199,7 @@ function applyHeroDamage(s, target, dmg) {
 // ---------- runy ----------
 
 export function rollDice(s) {
-  const n = 2 * livingHeroes(s).length + (livingHeroes(s).some((h) => h.type === 'jarl') ? 1 : 0) + ((s.premie && s.premie.runy) || 0);
+  const n = 2 * livingChampions(s).length + (livingChampions(s).some((h) => h.type === 'jarl') ? 1 : 0) + ((s.premie && s.premie.runy) || 0);
   s.dice = [];
   for (let i = 0; i < n; i++) s.dice.push({ id: i, face: DIE_FACES[Math.floor(rng(s) * 6)], used: false });
 }
@@ -201,6 +218,7 @@ export function assignRune(s, dieId, heroId, face) {
   if (!die || die.used || !h || h.hp <= 0 || h.side !== 'hero') return null;
   const f = die.face === 'N' ? face : die.face;
   if (!f || f === 'N') return null;
+  if (f === 'K' && h.oddzial) return null; // oddziały nie mają mocy
   die.used = true; die.assignedTo = heroId; die.as = f;
   const ev = [{ type: 'rune', heroId, face: f }];
   if (f === 'R') h.moveLeft += 2;
@@ -427,7 +445,7 @@ function spawn(s, type, at, ev) {
   const spot = freeNearBarrow(s, new Set(), at);
   if (!spot) return null;
   const d = ENEMIES[type];
-  const hp = d.boss ? level(s).bossHp : d.hp;
+  const hp = d.boss ? level(s).bossHp + (s.bossBonus || 0) : d.hp;
   const u = { id: s.nextId++, side: 'enemy', type, c: spot[0], r: spot[1], hp, maxHp: hp };
   s.units.push(u);
   ev.push({ type: 'spawn', id: u.id, unit: clone(u) });
@@ -437,11 +455,16 @@ function spawn(s, type, at, ev) {
 
 // ---------- przebieg rundy ----------
 
+// Fale danej rundy: z poziomu trudności plus trupy obudzone przez oddziały.
+export function wavesFor(s, r) {
+  return (level(s).waves[r] || []).concat((s.extraWaves && s.extraWaves[r]) || []);
+}
+
 export function startRound(s) {
   const ev = [];
   s.round++;
   for (const h of livingHeroes(s)) {
-    h.moveLeft = HEROES[h.type].move;
+    h.moveLeft = jednostka(h.type).move;
     h.attacked = false;
     h.runes = { T: 0, A: 0, R: 0, K: 0, B: 0 };
     h.shield = 0;
@@ -450,7 +473,7 @@ export function startRound(s) {
   }
   s.wards = (s.wards || []).filter((w) => w.until >= s.round);
   ev.push({ type: 'round', round: s.round });
-  for (const w of level(s).waves[s.round] || []) spawn(s, w.type, w.at, ev);
+  for (const w of wavesFor(s, s.round)) spawn(s, w.type, w.at, ev);
   s.phase = 'narada';
   planIntents(s);
   rollDice(s);
@@ -459,15 +482,14 @@ export function startRound(s) {
 
 export function upcomingWaves(s, ahead = 2) {
   const out = [];
-  const W = level(s).waves;
-  for (let r = s.round + 1; r <= s.round + ahead; r++) if (W[r]) out.push({ round: r, units: W[r].map((w) => w.type) });
+  for (let r = s.round + 1; r <= s.round + ahead; r++) { const W = wavesFor(s, r); if (W.length) out.push({ round: r, units: W.map((w) => w.type) }); }
   return out;
 }
 
 // Ilu trupów jeszcze nie wyszło z kurhanu (bez Pana Kurhanu).
 export function remainingInBarrow(s) {
   let n = 0;
-  for (const [r, list] of Object.entries(level(s).waves)) if (Number(r) > s.round) n += list.filter((w) => w.type !== 'pan-kurhanu').length;
+  for (let r = s.round + 1; r <= SCENARIO.maxRounds; r++) n += wavesFor(s, r).filter((w) => w.type !== 'pan-kurhanu').length;
   const boss = s.units.find((u) => u.type === 'pan-kurhanu');
   if (!boss || boss.hp > 0) n += level(s).summons - s.summoned;
   return n;
@@ -485,8 +507,9 @@ function checkEnd(s, ev) {
     s.result = 'win'; s.phase = 'koniec';
     for (const e of livingEnemies(s)) { e.hp = 0; ev.push({ type: 'death', id: e.id, crumble: true }); }
     ev.push({ type: 'end', result: 'win' });
-  } else if (!livingHeroes(s).length) {
+  } else if (!livingChampions(s).length) {
     s.result = 'lose'; s.phase = 'koniec';
+    for (const u of livingHeroes(s)) u.uciekl = true; // oddziały bez wodzów się wycofują
     ev.push({ type: 'end', result: 'lose' });
   }
 }

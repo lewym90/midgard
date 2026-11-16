@@ -4,7 +4,7 @@ import * as O from '../serwer/osada-dane.js';
 import { konto } from './konto.js';
 import { toast } from './konto-ui.js';
 import { audio } from './audio.js';
-import { HEROES, HERO_ORDER } from './data.js';
+import { HEROES, ODDZIALY } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -143,7 +143,7 @@ class Osada {
   _przyjmij(r) {
     this.o = r.osada;
     this.przes = r.teraz - Date.now();
-    for (const g of r.gotowe || []) toast(`Ukończono: ${O.BUDYNKI[g.typ].nazwa}, poziom ${g.poz}.`);
+    for (const g of r.gotowe || []) toast(g.oddzial ? `Wyszkolono: ${ODDZIALY[g.oddzial].name}.` : `Ukończono: ${O.BUDYNKI[g.typ].nazwa}, poziom ${g.poz}.`);
     this._tik(true);
   }
 
@@ -192,7 +192,8 @@ class Osada {
     $('o-nick').textContent = konto.nick || '';
     $('o-herb-poz').textContent = O.poziomDD(o);
     $('o-staty').innerHTML = `<span class="o-chip" title="Sława"><img src="${ikonaUrl('ik-slawa')}" alt="">${liczba(o.slawa)}</span>` +
-      `<span class="o-chip${wolni ? '' : ' pelny'}" title="Wolni budowniczowie"><img src="${ikonaUrl('ik-budowniczy')}" alt="">${wolni}/${O.budowniczowie(o)}</span>`;
+      `<span class="o-chip${wolni ? '' : ' pelny'}" title="Wolni budowniczowie"><img src="${ikonaUrl('ik-budowniczy')}" alt="">${wolni}/${O.budowniczowie(o)}</span>` +
+      (O.pojemnoscWojska(o) ? `<span class="o-chip${o.szkolenie.length ? ' szkoli' : ''}" title="Wojsko"><img src="assets/img/ui/ak-bohaterowie.webp" alt="">${O.liczbaWojska(o)}/${O.pojemnoscWojska(o)}</span>` : '');
     const doZebrania = o.budynki.filter((b) => O.BUDYNKI[b.typ].produkcja && b.bufor >= 1).length;
     $('o-zbierz').disabled = !doZebrania;
     let lic = $('o-zbierz').querySelector('.o-med-licznik');
@@ -248,7 +249,7 @@ class Osada {
     if (d.magazyn) return 'Pojemność: ' + Object.entries(d.magazyn).map(([s, v]) => `<b>${liczba(v * Math.pow(d.wzrostMagazynu, poz - 1))}</b> ${O.NAZWY_SUROWCOW[s].toLowerCase()}`).join(', ');
     if (b.typ === 'dlugi_dom') return `Schowek: <b>${liczba(800 + 600 * (poz - 1))}</b> na każdy surowiec, srebro <b>${liczba(200 + 100 * (poz - 1))}</b>`;
     if (b.typ === 'ognisko') return `Produkcja wszystkich budynków: <b>+${5 * poz}%</b>`;
-    if (d.bonus === 'zycie') return `Życie każdego bohatera w bitwie: <b>+${poz}</b>`;
+    if (d.bonus === 'zycie') return `Życie każdego wojownika w bitwie: <b>+${poz}</b> · wojsko: <b>${3 * poz}</b> miejsc, na wyprawę <b>${Math.min(5, Math.ceil(poz / 2))}</b>`;
     if (d.bonus === 'atak') return `Atak każdego bohatera w bitwie: <b>+${Math.floor((poz + 2) / 3)}</b>`;
     if (d.bonus === 'hamingja') return `Dodatkowe monety Hamingji: <b>+${Math.floor((poz + 1) / 3)}</b>`;
     if (d.bonus === 'runy') return `Dodatkowe runy w rundzie: <b>+${poz >= 8 ? 2 : poz >= 3 ? 1 : 0}</b>`;
@@ -264,7 +265,10 @@ class Osada {
     if (this.widokPanelu === 'budynek') {
       const b = o.budynki.find((x) => x.id === this.wybrany);
       if (!b) { this.zamknijPanel(); return; }
-      if (tylkoLiczniki && this._panelKlucz === `b${b.id}:${b.poz}:${!!b.bud}`) {
+      const hala = b.typ === 'hala_wojow' && b.poz >= 1;
+      const kluczB = `b${b.id}:${b.poz}:${!!b.bud}` + (hala ? ':' + this._kluczWojska(o) : '');
+      if (tylkoLiczniki && this._panelKlucz === kluczB) {
+        if (hala) this._licznikiWojska(box, o);
         const l = box.querySelector('[data-licznik]');
         if (l && b.bud) { l.textContent = czas(b.bud.koniec - this.teraz()); box.querySelector('.pasek-rama i').style.width = `${100 * Math.min(1, (this.teraz() - b.bud.start) / (b.bud.koniec - b.bud.start))}%`; }
         const buf = box.querySelector('[data-bufor]');
@@ -273,7 +277,7 @@ class Osada {
         if (btn) btn.disabled = this.zajety || b.bufor < 1;
         return;
       }
-      this._panelKlucz = `b${b.id}:${b.poz}:${!!b.bud}`;
+      this._panelKlucz = kluczB;
       const d = O.BUDYNKI[b.typ];
       const max = d.maxPoziom || O.MAX_POZIOM;
       let h = `<div class="o-head"><img src="assets/img/osada/${this._obraz(b)}.webp" alt=""><div><h3 class="wstega">${d.nazwa}</h3><div class="o-poz">${b.poz ? `Poziom ${b.poz}${max > 1 ? ` z ${max}` : ''}` : 'W budowie'}</div></div></div>
@@ -283,6 +287,7 @@ class Osada {
         h += `<div class="o-row"><span>Urobek w budynku: <b data-bufor>${liczba(b.bufor)} / ${liczba(O.pojemnoscBufora(o, b))}</b></span>
           <button class="btn btn-small btn-gold" data-zbierz ${b.bufor < 1 || this.zajety ? 'disabled' : ''}>Zbierz</button></div>`;
       }
+      if (hala) h += this._sekcjaWojska(o);
       if (b.bud) {
         const p = Math.min(1, (this.teraz() - b.bud.start) / (b.bud.koniec - b.bud.start));
         h += `<div class="o-bud"><div>Budowa poziomu ${b.bud.cel}: zostało <b data-licznik>${czas(b.bud.koniec - this.teraz())}</b></div>
@@ -301,6 +306,7 @@ class Osada {
       } else h += '<p class="o-ef">Najwyższy poziom.</p>';
       h += `<div class="o-row o-row-end"><button class="btn btn-small" data-przesun>Przenieś</button></div>`;
       box.innerHTML = h;
+      if (hala) this._podepnijWojsko(box);
       const q = (sel) => box.querySelector(sel);
       if (q('[data-zbierz]')) q('[data-zbierz]').onclick = () => this.zbierz(b.id);
       if (q('[data-anuluj]')) q('[data-anuluj]').onclick = () => this.akcja('anuluj', { id: b.id });
@@ -351,18 +357,97 @@ class Osada {
   }
 
   _panelBohaterow(box, o, tylkoLiczniki) {
-    if (tylkoLiczniki && this._panelKlucz === 'boh') return;
-    this._panelKlucz = 'boh';
+    const t = this.teraz();
+    const klucz = 'boh:' + JSON.stringify([o.bohaterowie, O.poziomDD(o), O.KOLEJNOSC_BOHATEROW.map((k) => !O.czyMoznaZwerbowac(o, k) && O.brakuje(o, O.BOHATEROWIE[k].koszt || {}).length === 0),
+      O.KOLEJNOSC_BOHATEROW.map((k) => O.wValhalli(o, k, t)), this.zajety]);
+    if (tylkoLiczniki && this._panelKlucz === klucz) {
+      box.querySelectorAll('[data-valh]').forEach((el) => { el.textContent = czas(Number(el.dataset.valh) - t); });
+      return;
+    }
+    this._panelKlucz = klucz;
     const p = O.premieBitwy(o);
     const lista = [];
     if (p.zycie) lista.push(`<b>+${p.zycie}</b> życia (Hala Wojów)`);
     if (p.atak) lista.push(`<b>+${p.atak}</b> ataku (Kuźnia)`);
     if (p.hamingja) lista.push(`<b>+${p.hamingja}</b> Hamingji (Świątynia)`);
     if (p.runy) lista.push(`<b>+${p.runy}</b> run na rundę (Chata Völvy)`);
-    box.innerHTML = `<div class="o-head"><div><h3 class="wstega">Bohaterowie</h3><div class="o-poz">Na wyprawę bierzesz trzech.</div></div></div>
-      <p class="o-premie">${lista.length ? 'Premie z osady w każdej wyprawie: ' + lista.join(', ') + '.' : 'Osada nie daje jeszcze premii. Postaw Halę Wojów, Kuźnię, Świątynię albo Chatę Völvy, żeby wzmocnić bohaterów w bitwie.'}</p>
-      <div class="o-boh">${HERO_ORDER.map((k) => { const d = HEROES[k]; return `<div class="o-boh-k"><img src="assets/img/bohaterowie/${k}-zeton.webp" alt=""><b>${d.name}</b>
-        <span>Życie ${d.hp}${p.zycie ? ` <em>+${p.zycie}</em>` : ''} · Ruch ${d.move} · Atak ${d.atk}${p.atak ? ` <em>+${p.atak}</em>` : ''}${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span></div>`; }).join('')}</div>`;
+    const limit = O.limitPoziomuBohatera(o);
+    const karty = O.KOLEJNOSC_BOHATEROW.map((k) => {
+      const d = HEROES[k], b = o.bohaterowie[k];
+      if (!b) {
+        const e = O.BOHATEROWIE[k], nie = O.czyMoznaZwerbowac(o, k), brak = O.brakuje(o, e.koszt);
+        return `<div class="o-boh-k obcy"><img src="assets/img/bohaterowie/${k}-zeton.webp" alt=""><div class="o-boh-t"><div class="o-boh-n"><b>${d.name}</b><span class="o-boh-rola">${d.role}</span></div>
+          <span>Życie ${d.hp} · Ruch ${d.move} · Atak ${d.atk}${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span>
+          <div class="o-koszt">${this._koszt(e.koszt, o)}</div>${nie ? `<div class="o-pow">${nie}</div>` : ''}</div>
+          <button class="btn btn-small btn-gold" data-werbuj="${k}" ${nie || brak.length || this.zajety ? 'disabled' : ''}>Zwerbuj</button></div>`;
+      }
+      const poz = O.poziomBohatera(o, k), pr = O.premiaPoziomu(poz);
+      const od = O.xpNaPoziom(poz), doN = O.xpNaPoziom(poz + 1);
+      const maxTeraz = poz >= limit;
+      const proc = maxTeraz ? 100 : Math.min(100, (100 * (b.xp - od)) / (doN - od));
+      const valh = O.wValhalli(o, k, t);
+      const zy = d.hp + pr.zycie + p.zycie, at = d.atk + pr.atak + p.atak;
+      return `<div class="o-boh-k${valh ? ' valhalla' : ''}"><img src="assets/img/bohaterowie/${k}-zeton.webp" alt=""><div class="o-boh-t"><div class="o-boh-n"><b>${d.name}</b><span class="o-boh-poz">poziom ${poz}</span></div>
+        <span>Życie ${zy} · Ruch ${d.move} · Atak ${at}${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span>
+        <div class="o-xp"><i style="width:${proc}%"></i></div>
+        <small>${poz >= O.MAX_POZIOM_BOHATERA ? 'Najwyższy poziom' : maxTeraz ? `Więcej poziomów po rozbudowie Długiego Domu (${Math.floor(b.xp)} doświadczenia)` : `${Math.floor(b.xp - od)} / ${doN - od} doświadczenia do poziomu ${poz + 1}`}</small>
+        ${valh ? `<div class="o-valh">W Valhalli jeszcze <strong data-valh="${b.valhalla}">${czas(b.valhalla - t)}</strong></div>` : ''}</div></div>`;
+    }).join('');
+    box.innerHTML = `<div class="o-head"><div><h3 class="wstega">Bohaterowie</h3><div class="o-poz">Na wyprawę bierzesz trzech · poziom najwyżej ${limit}</div></div></div>
+      <p class="o-premie">${lista.length ? 'Premie z osady w każdej wyprawie: ' + lista.join(', ') + '.' : 'Osada nie daje jeszcze premii. Postaw Halę Wojów, Kuźnię, Świątynię albo Chatę Völvy, żeby wzmocnić bohaterów w bitwie.'}
+      Bohaterowie zdobywają doświadczenie w wyprawach: każdy poziom to +1 życia, a poziomy 4, 7 i 10 dają +1 ataku. Kto padnie, odpoczywa w Valhalli.</p>
+      <div class="o-boh">${karty}</div>`;
+    box.querySelectorAll('[data-werbuj]').forEach((btn) => {
+      btn.onclick = () => this.akcja('werbuj', { typ: btn.dataset.werbuj }, () => { audio.play('klik'); toast(`${HEROES[btn.dataset.werbuj].name} dołącza do osady.`); });
+    });
+  }
+
+  // ---------- wojsko w Hali Wojów ----------
+  _kluczWojska(o) {
+    return JSON.stringify([o.wojsko, o.szkolenie.map((z) => z.typ), O.KOLEJNOSC_WOJSKA.map((t) => !O.czyMoznaSzkolic(o, t) && !O.brakuje(o, O.WOJSKO[t].koszt).length), this.zajety]);
+  }
+
+  _sekcjaWojska(o) {
+    const t = this.teraz(), sz = o.szkolenie;
+    let h = `<div class="o-next o-wojsko"><h4>Wojsko</h4>
+      <p class="o-ef">W osadzie <b>${O.liczbaWojska(o)} / ${O.pojemnoscWojska(o)}</b> · na wyprawę do <b>${O.miejscaWBitwie(o)}</b> · utrzymanie <b>${O.utrzymanie(o)}</b> żywności na godzinę${o.zasoby.zywnosc < 1 && O.utrzymanie(o) ? ' · <span class="o-brak">brakuje żywności!</span>' : ''}</p>`;
+    if (sz.length) {
+      const z = sz[0], d = ODDZIALY[z.typ];
+      const p = Math.min(1, Math.max(0, (t - z.start) / (z.koniec - z.start)));
+      h += `<div class="o-bud"><div>Szkolenie: <b>${d.name}</b>, zostało <b data-szk>${czas(z.koniec - t)}</b>${sz.length > 1 ? ` · w kolejce: ${sz.slice(1).map((x) => ODDZIALY[x.typ].name).join(', ')}` : ''}</div>
+        <div class="pasek-rama"><i data-szk-pasek style="width:${100 * p}%"></i></div>
+        <button class="btn btn-small" data-szk-anuluj ${this.zajety ? 'disabled' : ''}>Anuluj ostatni (zwrot)</button></div>`;
+    }
+    h += '<div class="o-lista">';
+    for (const typ of O.KOLEJNOSC_WOJSKA) {
+      const e = O.WOJSKO[typ], d = ODDZIALY[typ];
+      const nie = O.czyMoznaSzkolic(o, typ), brak = O.brakuje(o, e.koszt);
+      const zablok = nie && nie.includes('poziomie');
+      h += `<div class="o-opt${zablok ? ' off' : ''}"><div class="troop-av" style="--img:url(assets/img/oddzialy/${typ}-zeton.webp)"><span>${d.name[0]}</span></div>
+        <div class="o-opt-txt"><b>${d.name}</b> <span class="o-ile">masz ${o.wojsko[typ] || 0}</span>
+        <div class="o-jedn">Życie ${d.hp} · Ruch ${d.move} · Atak ${d.atk}${d.range > 1 ? ` · zasięg ${d.range}` : ''}${d.pancerz ? ` · pancerz ${d.pancerz}` : ''}</div>
+        <div class="o-koszt">${this._koszt(e.koszt, o)}<span class="o-k">⏱ ${czas(e.czas * 1000)}</span><span class="o-k">utrzymanie ${e.utrzymanie}/h</span></div>
+        ${nie ? `<div class="o-pow">${nie}</div>` : ''}</div>
+        <button class="btn btn-small btn-gold" data-szkol="${typ}" ${nie || brak.length || this.zajety ? 'disabled' : ''}>Szkol</button></div>`;
+    }
+    return h + '</div></div>';
+  }
+
+  _licznikiWojska(box, o) {
+    const z = o.szkolenie[0], t = this.teraz();
+    const l = box.querySelector('[data-szk]');
+    if (z && l) {
+      l.textContent = czas(z.koniec - t);
+      box.querySelector('[data-szk-pasek]').style.width = `${100 * Math.min(1, Math.max(0, (t - z.start) / (z.koniec - z.start)))}%`;
+    }
+  }
+
+  _podepnijWojsko(box) {
+    box.querySelectorAll('[data-szkol]').forEach((btn) => {
+      btn.onclick = () => this.akcja('szkol', { typ: btn.dataset.szkol }, () => { audio.play('klik'); toast(`Szkolenie: ${ODDZIALY[btn.dataset.szkol].name}.`); });
+    });
+    const an = box.querySelector('[data-szk-anuluj]');
+    if (an) an.onclick = () => this.akcja('szkol/anuluj', {});
   }
 
   // ---------- kamera i gesty ----------

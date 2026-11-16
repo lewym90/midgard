@@ -49,7 +49,7 @@ export const BUDYNKI = {
   hala_wojow: {
     nazwa: 'Hala Wojów', grupa: 'wojsko', limit: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1], koszt: { drewno: 250, zelazo: 200, zywnosc: 100 }, czas: 120,
     bonus: 'zycie',
-    opis: 'Tu bohaterowie ćwiczą między wyprawami. Każdy poziom: +1 do życia każdego bohatera w bitwie.',
+    opis: 'Tu szkolisz wojsko i tu bohaterowie ćwiczą między wyprawami. Każdy poziom: +1 do życia każdego wojownika w bitwie, więcej miejsc dla wojska i nowe rodzaje oddziałów.',
   },
   kuznia: {
     nazwa: 'Kuźnia', grupa: 'wojsko', limit: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1], koszt: { drewno: 200, zelazo: 300 }, czas: 150,
@@ -59,7 +59,7 @@ export const BUDYNKI = {
   swiatynia: {
     nazwa: 'Świątynia', grupa: 'wojsko', limit: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1], koszt: { drewno: 300, zelazo: 150, srebro: 80 }, czas: 180,
     bonus: 'hamingja',
-    opis: 'Ofiary dla bogów. Poziomy 2, 5 i 8: kolejna moneta Hamingji (przerzut run) w każdej bitwie.',
+    opis: 'Ofiary dla bogów. Poziomy 2, 5 i 8: kolejna moneta Hamingji (przerzut run) w każdej bitwie. Każdy poziom skraca o 7% pobyt poległych bohaterów w Valhalli.',
   },
   chata_volvy: {
     nazwa: 'Chata Völvy', grupa: 'wojsko', limit: [0, 0, 0, 0, 1, 1, 1, 1, 1, 1], koszt: { drewno: 250, srebro: 120 }, czas: 200,
@@ -160,10 +160,21 @@ export function nowaOsada(teraz) {
     budynki: [b(1, 'dlugi_dom', c, c), b(2, 'tartak', c - 3, c - 1), b(3, 'farma', c + 2, c), b(4, 'ognisko', c, c + 2)],
     wyprawy: {},
     statystyki: { wygrane: 0, przegrane: 0 },
+    bohaterowie: nowiBohaterowie(),
+    wojsko: {},
+    szkolenie: [],
   };
 }
 
-// ---------- upływ czasu: produkcja i kończenie budów (w kolejności zdarzeń) ----------
+// Starsze zapisy osad (sprzed armii) dostają brakujące pola.
+export function napraw(o) {
+  if (!o.bohaterowie) o.bohaterowie = nowiBohaterowie();
+  if (!o.wojsko) o.wojsko = {};
+  if (!o.szkolenie) o.szkolenie = [];
+  return o;
+}
+
+// ---------- upływ czasu: produkcja, utrzymanie wojska, budowy i szkolenie (w kolejności zdarzeń) ----------
 function narosnij(o, od, doCzasu) {
   const dt = (doCzasu - od) / H;
   if (dt <= 0) return;
@@ -171,20 +182,32 @@ function narosnij(o, od, doCzasu) {
     if (!BUDYNKI[b.typ].produkcja || b.poz < 1) continue;
     b.bufor = Math.min(pojemnoscBufora(o, b), (b.bufor || 0) + produkcjaNaGodzine(o, b) * dt);
   }
+  const ut = utrzymanie(o);
+  if (ut > 0) o.zasoby.zywnosc = Math.max(0, o.zasoby.zywnosc - ut * dt);
 }
 
-// Zwraca listę ukończonych budów (do powiadomień).
+// Zwraca listę ukończonych budów i szkoleń (do powiadomień).
 export function uplyw(o, teraz) {
+  napraw(o);
   const gotowe = [];
   let t = o.czas;
   for (;;) {
-    const nast = o.budynki.filter((b) => b.bud && b.bud.koniec <= teraz).sort((a, b) => a.bud.koniec - b.bud.koniec)[0];
-    if (!nast) break;
-    narosnij(o, t, nast.bud.koniec);
-    t = Math.max(t, nast.bud.koniec);
-    nast.poz = nast.bud.cel;
-    nast.bud = null;
-    gotowe.push({ id: nast.id, typ: nast.typ, poz: nast.poz });
+    const bud = o.budynki.filter((b) => b.bud && b.bud.koniec <= teraz).sort((a, b) => a.bud.koniec - b.bud.koniec)[0];
+    const szk = o.szkolenie[0] && o.szkolenie[0].koniec <= teraz ? o.szkolenie[0] : null;
+    if (!bud && !szk) break;
+    if (szk && (!bud || szk.koniec <= bud.bud.koniec)) {
+      narosnij(o, t, szk.koniec);
+      t = Math.max(t, szk.koniec);
+      o.szkolenie.shift();
+      o.wojsko[szk.typ] = (o.wojsko[szk.typ] || 0) + 1;
+      gotowe.push({ oddzial: szk.typ });
+      continue;
+    }
+    narosnij(o, t, bud.bud.koniec);
+    t = Math.max(t, bud.bud.koniec);
+    bud.poz = bud.bud.cel;
+    bud.bud = null;
+    gotowe.push({ id: bud.id, typ: bud.typ, poz: bud.poz });
   }
   narosnij(o, t, teraz);
   o.czas = Math.max(o.czas, teraz);
@@ -288,4 +311,165 @@ export function dodajLup(o, l) {
   }
   o.slawa += l.slawa || 0;
   return { dodane, stracone, slawa: l.slawa || 0 };
+}
+
+// ======================================================================
+// ARMIA I BOHATEROWIE (E3)
+// ======================================================================
+
+// Bohaterowie: trzech na start, reszta do zwerbowania za srebro.
+export const BOHATEROWIE = {
+  berserker: { nazwa: 'Berserker', start: true },
+  tarczowniczka: { nazwa: 'Tarczowniczka', start: true },
+  volva: { nazwa: 'Völva', start: true },
+  skald: { nazwa: 'Skald', dd: 2, koszt: { srebro: 120, zywnosc: 200 } },
+  lowczyni: { nazwa: 'Łowczyni', dd: 2, koszt: { srebro: 160, zywnosc: 200 } },
+  jarl: { nazwa: 'Jarl', dd: 3, koszt: { srebro: 260, zywnosc: 300 } },
+  'mistrz-run': { nazwa: 'Mistrz Run', dd: 4, koszt: { srebro: 380, zywnosc: 400 } },
+  ulfhedinn: { nazwa: 'Ulfhedinn', dd: 5, koszt: { srebro: 520, zywnosc: 500 } },
+};
+export const KOLEJNOSC_BOHATEROW = ['berserker', 'tarczowniczka', 'volva', 'skald', 'lowczyni', 'jarl', 'mistrz-run', 'ulfhedinn'];
+export const MAX_POZIOM_BOHATERA = 10;
+function nowiBohaterowie() {
+  const out = {};
+  for (const k of KOLEJNOSC_BOHATEROW) if (BOHATEROWIE[k].start) out[k] = { xp: 0, valhalla: 0 };
+  return out;
+}
+
+// Doświadczenie potrzebne do osiągnięcia poziomu p (łącznie): 60, 180, 360, 600, …
+export const xpNaPoziom = (p) => 30 * p * (p - 1);
+export const limitPoziomuBohatera = (o) => Math.min(MAX_POZIOM_BOHATERA, poziomDD(o) + 2);
+export function poziomBohatera(o, typ) {
+  const b = o.bohaterowie && o.bohaterowie[typ];
+  if (!b) return 0;
+  let p = 1;
+  while (p < limitPoziomuBohatera(o) && b.xp >= xpNaPoziom(p + 1)) p++;
+  return p;
+}
+// Premie z poziomu: +1 życia za każdy poziom ponad pierwszy, +1 ataku na poziomach 4, 7 i 10.
+export const premiaPoziomu = (p) => ({ zycie: Math.max(0, p - 1), atak: (p >= 4) + (p >= 7) + (p >= 10) });
+export function rozwojBohaterow(o) {
+  const out = {};
+  for (const k of Object.keys(o.bohaterowie || {})) { const p = poziomBohatera(o, k); out[k] = { poz: p, ...premiaPoziomu(p) }; }
+  return out;
+}
+// Polegli wracają z Valhalli po: 20 min + 10 min na poziom, Świątynia skraca o 7% na poziom.
+export function czasValhalli(o, typ) {
+  const p = Math.max(1, poziomBohatera(o, typ));
+  return Math.round((20 + 10 * p) * 60 * 1000 * Math.max(0.3, 1 - 0.07 * poziomTypu(o, 'swiatynia')));
+}
+export const wValhalli = (o, typ, teraz) => !!(o.bohaterowie[typ] && o.bohaterowie[typ].valhalla > teraz);
+
+export function czyMoznaZwerbowac(o, typ) {
+  const d = BOHATEROWIE[typ];
+  if (!d) return 'Nie ma takiego bohatera.';
+  if (o.bohaterowie[typ]) return 'Ten bohater jest już w osadzie.';
+  if (poziomDD(o) < d.dd) return `Wymaga Długiego Domu na poziomie ${d.dd}.`;
+  return null;
+}
+export function werbuj(o, typ) {
+  napraw(o);
+  const nie = czyMoznaZwerbowac(o, typ);
+  if (nie) return nie;
+  const k = BOHATEROWIE[typ].koszt;
+  if (!stac(o, k)) return 'Brakuje: ' + brakuje(o, k).join(', ') + '.';
+  pobierz(o, k);
+  o.bohaterowie[typ] = { xp: 0, valhalla: 0 };
+  return null;
+}
+
+// Oddziały: odblokowanie od poziomu Hali Wojów, koszt, czas szkolenia, utrzymanie (żywność na godzinę).
+export const WOJSKO = {
+  woje: { nazwa: 'Woje', hala: 1, koszt: { zywnosc: 60, zelazo: 30 }, czas: 3 * 60, utrzymanie: 2 },
+  tarczownicy: { nazwa: 'Tarczownicy', hala: 2, koszt: { zywnosc: 80, zelazo: 60, drewno: 40 }, czas: 5 * 60, utrzymanie: 3 },
+  lucznicy: { nazwa: 'Łucznicy', hala: 3, koszt: { zywnosc: 70, drewno: 90 }, czas: 6 * 60, utrzymanie: 2 },
+  oszczepnicy: { nazwa: 'Oszczepnicy', hala: 5, koszt: { zywnosc: 100, zelazo: 90, drewno: 40 }, czas: 10 * 60, utrzymanie: 3 },
+  berserkerzy: { nazwa: 'Berserkerzy', hala: 7, koszt: { zywnosc: 160, zelazo: 140, srebro: 30 }, czas: 20 * 60, utrzymanie: 5 },
+};
+export const KOLEJNOSC_WOJSKA = ['woje', 'tarczownicy', 'lucznicy', 'oszczepnicy', 'berserkerzy'];
+export const MAX_KOLEJKI = 5;
+export const pojemnoscWojska = (o) => 3 * poziomTypu(o, 'hala_wojow');
+export const miejscaWBitwie = (o) => Math.min(5, Math.ceil(poziomTypu(o, 'hala_wojow') / 2));
+export const liczbaWojska = (o) => Object.values(o.wojsko || {}).reduce((a, n) => a + n, 0);
+export function utrzymanie(o) {
+  let n = 0;
+  for (const [t, ile] of Object.entries(o.wojsko || {})) n += (WOJSKO[t] ? WOJSKO[t].utrzymanie : 0) * ile;
+  return n;
+}
+
+export function czyMoznaSzkolic(o, typ) {
+  const d = WOJSKO[typ];
+  if (!d) return 'Nie ma takiego oddziału.';
+  const hala = poziomTypu(o, 'hala_wojow');
+  if (hala < 1) return 'Najpierw postaw Halę Wojów.';
+  if (hala < d.hala) return `Wymaga Hali Wojów na poziomie ${d.hala}.`;
+  if (liczbaWojska(o) + o.szkolenie.length >= pojemnoscWojska(o)) return 'Brak miejsca w Hali Wojów. Rozbuduj ją, żeby utrzymać więcej wojska.';
+  if (o.szkolenie.length >= MAX_KOLEJKI) return `W kolejce może czekać najwyżej ${MAX_KOLEJKI} oddziałów.`;
+  return null;
+}
+export function szkol(o, typ, teraz) {
+  napraw(o);
+  const nie = czyMoznaSzkolic(o, typ);
+  if (nie) return nie;
+  const k = WOJSKO[typ].koszt;
+  if (!stac(o, k)) return 'Brakuje: ' + brakuje(o, k).join(', ') + '.';
+  pobierz(o, k);
+  const ost = o.szkolenie[o.szkolenie.length - 1];
+  const start = Math.max(teraz, ost ? ost.koniec : 0);
+  o.szkolenie.push({ typ, start, koniec: start + WOJSKO[typ].czas * 1000 });
+  return null;
+}
+// Anuluje ostatni oddział w kolejce i zwraca jego koszt.
+export function anulujSzkolenie(o) {
+  napraw(o);
+  const z = o.szkolenie.pop();
+  if (!z) return 'Nikt się nie szkoli.';
+  const cap = pojemnosc(o);
+  for (const [s2, n] of Object.entries(WOJSKO[z.typ].koszt)) o.zasoby[s2] = Math.min(cap[s2], o.zasoby[s2] + n);
+  return null;
+}
+
+// ---------- wyprawa z drużyną i wojskiem ----------
+// Sprawdza wybór gracza. Zwraca { blad } albo { druzyna, oddzialy, rozwoj, premie }.
+export function przygotujWyprawe(o, druzyna, oddzialy, teraz) {
+  napraw(o);
+  if (!Array.isArray(druzyna) || druzyna.length !== 3 || new Set(druzyna).size !== 3) return { blad: 'Wybierz trzech różnych bohaterów.' };
+  for (const k of druzyna) {
+    if (!o.bohaterowie[k]) return { blad: `${(BOHATEROWIE[k] || { nazwa: k }).nazwa}: tego bohatera nie ma jeszcze w osadzie.` };
+    if (wValhalli(o, k, teraz)) return { blad: `${BOHATEROWIE[k].nazwa} jest jeszcze w Valhalli.` };
+  }
+  const lista = Array.isArray(oddzialy) ? oddzialy.filter((t) => WOJSKO[t]) : [];
+  if (lista.length > miejscaWBitwie(o)) return { blad: `Na wyprawę możesz zabrać najwyżej ${miejscaWBitwie(o)} oddziałów.` };
+  const ile = {};
+  for (const t of lista) { ile[t] = (ile[t] || 0) + 1; if (ile[t] > (o.wojsko[t] || 0)) return { blad: `Nie masz tylu oddziałów: ${WOJSKO[t].nazwa}.` }; }
+  const r = rozwojBohaterow(o), rozwoj = {};
+  for (const k of druzyna) rozwoj[k] = r[k];
+  return { druzyna: druzyna.slice(), oddzialy: lista, rozwoj, premie: premieBitwy(o) };
+}
+
+export const XP_WYPRAWY = { wedrowiec: 40, wojownik: 70, ragnarok: 120 };
+// Rozlicza drużynę: doświadczenie, Valhalla dla poległych, utracone oddziały.
+// polegli: lista bohaterów, którzy padli; ocaleli: lista typów oddziałów, które wróciły.
+export function rozliczDruzyne(o, w, wygrana, polegli, ocaleli, teraz) {
+  napraw(o);
+  const xp = Math.round((XP_WYPRAWY[w.poziom] || 40) * (wygrana ? 1 : 0.3));
+  const bohaterowie = [];
+  for (const k of w.druzyna || []) {
+    const b = o.bohaterowie[k];
+    if (!b) continue;
+    const przed = poziomBohatera(o, k);
+    b.xp += xp;
+    const poz = poziomBohatera(o, k);
+    const padl = Array.isArray(polegli) && polegli.includes(k);
+    if (padl) b.valhalla = teraz + czasValhalli(o, k);
+    bohaterowie.push({ typ: k, xp, poz, awans: poz > przed, valhalla: padl ? b.valhalla : 0 });
+  }
+  const wrocili = {};
+  for (const t of Array.isArray(ocaleli) ? ocaleli : []) wrocili[t] = (wrocili[t] || 0) + 1;
+  const straty = {};
+  for (const t of w.oddzialy || []) {
+    if (wrocili[t] > 0) { wrocili[t]--; continue; }
+    if ((o.wojsko[t] || 0) > 0) { o.wojsko[t]--; straty[t] = (straty[t] || 0) + 1; }
+  }
+  return { bohaterowie, straty };
 }

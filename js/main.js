@@ -2,14 +2,15 @@
 import * as E from './engine.js';
 import { Board } from './board.js';
 import * as UI from './ui.js';
-import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES } from './data.js';
+import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES, ODDZIALY, ODDZIALY_ORDER, jednostka } from './data.js';
+import * as O from '../serwer/osada-dane.js';
 import { key, distance } from './hex.js';
 import { audio } from './audio.js';
 import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 import { osada } from './osada.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -50,6 +51,7 @@ function loadImages() {
     'teren-snieg': 'teren/snieg', 'teren-las': 'teren/las', 'teren-lod': 'teren/lod', 'teren-bagno': 'teren/bagno',
     'teren-skaly': 'teren/skaly', 'teren-kurhan': 'teren/kurhan',
     ...Object.fromEntries(HERO_ORDER.map((k) => ['zeton-' + k, `bohaterowie/${k}-zeton`])),
+    ...Object.fromEntries(ODDZIALY_ORDER.map((k) => ['zeton-' + k, `oddzialy/${k}-zeton`])),
     'zeton-draugr': 'wrogowie/draugr-zeton', 'zeton-lucznik': 'wrogowie/lucznik-zeton', 'zeton-pan-kurhanu': 'wrogowie/pan-kurhanu-zeton',
   };
   const out = {};
@@ -156,7 +158,7 @@ function updateHint(extra) {
   }
   if (sel.heroId != null) {
     const h = E.unitById(state, sel.heroId);
-    const d = HEROES[h.type];
+    const d = jednostka(h.type);
     return UI.setHint(`<b>${d.name}</b>: ruch ${h.moveLeft}, atak ${E.heroAttackValue(state, h)}${h.attacked ? ' (już atakował)' : ''}. Złote pola: dokąd może pójść. Czerwona obręcz: kogo może zaatakować.`);
   }
   UI.setHint('<b>Narada.</b> Wybierz bohatera, żeby nim ruszyć albo zaatakować. Stuknij runę na dole, a potem bohatera, żeby mu ją dać.');
@@ -189,7 +191,7 @@ async function play(events) {
     if (ev.type === 'round') {
       newRound = true;
       applyEvent(view, ev); render();
-      await banner(`Runda ${ev.round}`, ev.round === 1 ? 'Umarli wychodzą z kurhanu' : E.level(state).waves[ev.round] ? 'Kurhan znów się otwiera' : 'Norny tkają nowe nici', '', 1150);
+      await banner(`Runda ${ev.round}`, ev.round === 1 ? 'Umarli wychodzą z kurhanu' : E.wavesFor(state, ev.round).length ? 'Kurhan znów się otwiera' : 'Norny tkają nowe nici', '', 1150);
       continue;
     }
     if (ev.type === 'frost') { await banner('Mróz', 'Zima zabiera kolejną część pola bitwy', 'frost', 900); }
@@ -235,9 +237,11 @@ async function giveDie(dieId, heroId) {
   const d = state.dice.find((x) => x.id === dieId);
   if (!d) return;
   let face = d.face;
+  const cel = E.unitById(state, heroId);
+  if (cel && cel.oddzial && face === 'K') { KUI.toast('Oddziały nie mają mocy. Runę Kenaz daj bohaterowi.'); return; }
   if (face === 'N') {
     face = await new Promise((res) => {
-      UI.renderAnsuz((f) => { overlay('ov-ansuz', false); res(f); });
+      UI.renderAnsuz((f) => { overlay('ov-ansuz', false); res(f); }, !!(cel && cel.oddzial));
       $('btn-ansuz-cancel').onclick = () => { overlay('ov-ansuz', false); res(null); };
       overlay('ov-ansuz');
     });
@@ -358,7 +362,7 @@ function onHover(h) {
 async function endNarada() {
   if (busy || state.phase !== 'narada') return;
   const freeDice = state.dice.filter((d) => !d.used).length;
-  const idle = E.livingHeroes(state).filter((h) => !h.attacked && E.attackTargets(state, h).length).map((h) => HEROES[h.type].name);
+  const idle = E.livingHeroes(state).filter((h) => !h.attacked && E.attackTargets(state, h).length).map((h) => jednostka(h.type).name);
   const warn = [];
   if (freeDice) warn.push(`${freeDice} ${freeDice === 1 ? 'runa czeka' : freeDice < 5 ? 'runy czekają' : 'run czeka'} na przydział`);
   if (idle.length) warn.push(`${idle.join(' i ')} ${idle.length > 1 ? 'mogą' : 'może'} jeszcze zaatakować`);
@@ -393,19 +397,30 @@ function showEnd() {
   const win = state.result === 'win';
   audio.music(win ? 'zwyciestwo' : 'porazka');
   $('end-title').textContent = win ? 'Zwycięstwo' : 'Klęska';
-  const alive = E.livingHeroes(state).length;
-  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów. Poziom: ${E.level(state).name}.</p><p class="stats" id="end-lup">${state.wyprawa ? 'Liczę łup…' : konto.zalogowany ? 'Ta bitwa nie była wyprawą z osady, więc nie daje łupu.' : ''}</p>`;
+  const alive = E.livingChampions(state).length;
+  const oddz = state.units.filter((u) => u.oddzial);
+  const oddzTxt = oddz.length ? ` Wróciło ${oddz.filter((u) => u.hp > 0).length} z ${oddz.length} oddziałów.` : '';
+  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów.${oddzTxt} Poziom: ${E.level(state).name}.</p><p class="stats" id="end-lup">${state.wyprawa ? 'Liczę łup…' : konto.zalogowany ? 'Ta bitwa nie była wyprawą z osady, więc nie daje łupu.' : ''}</p><div class="end-druzyna" id="end-druzyna"></div>`;
   $('btn-end-menu').textContent = konto.zalogowany ? 'Wróć do osady' : 'Menu główne';
   overlay('ov-end');
   const wyprawa = state.wyprawa;
+  const polegli = state.units.filter((u) => u.side === 'hero' && !u.oddzial && u.hp <= 0).map((u) => u.type);
+  const ocaleli = oddz.filter((u) => u.hp > 0).map((u) => u.type);
   store.clear();
-  if (wyprawa) rozliczWyprawe(wyprawa, state.result);
+  if (wyprawa) rozliczWyprawe(wyprawa, state.result, polegli, ocaleli);
 }
 
-async function rozliczWyprawe(id, wynik) {
+const godz = (ms) => new Date(ms).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+async function rozliczWyprawe(id, wynik, polegli = [], ocaleli = []) {
   const el = () => $('end-lup');
   try {
-    const r = await konto.api('POST', '/osada/wyprawa/koniec', { id, wynik });
+    const r = await konto.api('POST', '/osada/wyprawa/koniec', { id, wynik, polegli, ocaleli });
+    if (r.druzyna && $('end-druzyna')) {
+      const wiersze = r.druzyna.bohaterowie.map((b) => `<div class="end-boh"><img src="assets/img/bohaterowie/${b.typ}-zeton.webp" alt=""><span><b>${HEROES[b.typ].name}</b> +${b.xp} doświadczenia${b.awans ? ` · <em>awans na poziom ${b.poz}!</em>` : ''}${b.valhalla ? ` · w Valhalli do ${godz(b.valhalla)}` : ''}</span></div>`);
+      const st = Object.entries(r.druzyna.straty || {});
+      if (st.length) wiersze.push(`<div class="end-boh end-straty">Polegli z wojska: ${st.map(([t, n]) => `${ODDZIALY[t].name} ×${n}`).join(', ')}</div>`);
+      $('end-druzyna').innerHTML = wiersze.join('');
+    }
     const d = r.lup.dodane, st = r.lup.stracone;
     const czesci = Object.keys(NAZWY_SUR).filter((k) => d[k]).map((k) => `${NAZWY_SUR[k]} +${d[k]}`);
     const przep = Object.keys(NAZWY_SUR).filter((k) => st[k] > 0).map((k) => `${NAZWY_SUR[k]} ${st[k]}`);
@@ -417,19 +432,58 @@ async function rozliczWyprawe(id, wynik) {
 }
 
 // ---------- start bitwy ----------
+// Co wolno wziąć na wyprawę z osady: zwerbowani bohaterowie poza Valhallą i wyszkolone oddziały.
+function statusDruzyny() {
+  const o = pick.zOsady && osada.widok;
+  if (!o || !o.bohaterowie) return null;
+  const t = osada.teraz(), out = {};
+  for (const k of HERO_ORDER) {
+    const b = o.bohaterowie[k], d = O.BOHATEROWIE[k];
+    if (!b) out[k] = { blokada: O.poziomDD(o) < d.dd ? `Do zwerbowania przy Długim Domu ${d.dd}` : 'Do zwerbowania w osadzie (Bohaterowie)' };
+    else {
+      const p = O.poziomBohatera(o, k);
+      out[k] = { poz: p, ...O.premiaPoziomu(p) };
+      if (O.wValhalli(o, k, t)) out[k].blokada = `W Valhalli do ${godz(b.valhalla)}`;
+    }
+  }
+  return out;
+}
+
 function openTeam() {
+  const status = statusDruzyny();
+  const o = status && osada.widok;
+  pick.oddzialy = pick.oddzialy || [];
+  if (status) {
+    pick.team = pick.team.filter((k) => !status[k].blokada);
+    for (const k of HERO_ORDER) if (pick.team.length < 3 && !status[k].blokada && !pick.team.includes(k)) pick.team.push(k);
+    // oddziały: tylko te, które są w osadzie, i nie więcej niż miejsc
+    const zostaw = [], ile = {};
+    for (const t of pick.oddzialy) { ile[t] = (ile[t] || 0) + 1; if (ile[t] <= (o.wojsko[t] || 0) && zostaw.length < O.miejscaWBitwie(o)) zostaw.push(t); }
+    pick.oddzialy = zostaw;
+  } else pick.oddzialy = [];
+  const wolni = status ? HERO_ORDER.filter((k) => !status[k].blokada).length : 8;
   const draw = () => {
     UI.renderTeam(pick.team, (k) => {
+      if (status && status[k].blokada) return;
       const i = pick.team.indexOf(k);
       if (i >= 0) pick.team.splice(i, 1);
       else if (pick.team.length < 3) pick.team.push(k);
       draw();
+    }, status);
+    if (status) UI.renderTroops(o.wojsko, pick.oddzialy, O.miejscaWBitwie(o), (t, z) => {
+      if (z > 0) pick.oddzialy.push(t);
+      else { const i = pick.oddzialy.lastIndexOf(t); if (i >= 0) pick.oddzialy.splice(i, 1); }
+      draw();
     });
+    else $('team-troops').hidden = true;
     UI.renderLevels(pick.level, (l) => { pick.level = l; draw(); });
     const go = $('btn-team-go');
     go.disabled = pick.team.length !== 3;
-    go.textContent = pick.team.length === 3 ? 'Dalej' : `Wybierz jeszcze ${3 - pick.team.length}`;
+    go.textContent = pick.team.length === 3 ? 'Dalej' : wolni < 3 ? 'Za mało bohaterów' : `Wybierz jeszcze ${3 - pick.team.length}`;
   };
+  $('team-sub').textContent = status
+    ? `Trzech bohaterów z twojej osady${O.miejscaWBitwie(o) ? ' i oddziały z Hali Wojów' : ''}. Polegli odpoczywają potem w Valhalli.`
+    : 'Trzech bohaterów. Każdy łamie inną regułę, a bitwę wygrywa się tylko razem.';
   draw();
   show('screen-team');
 }
@@ -437,19 +491,26 @@ function openTeam() {
 async function newBattle() {
   store.clear();
   // wyprawa z osady: premie z budynków i łup po bitwie
-  let wyprawa = null, premie = null;
+  let wyprawa = null, premie = null, opcje = null;
   if (konto.zalogowany && pick.zOsady) {
-    try { const r = await konto.api('POST', '/osada/wyprawa/start', { poziom: pick.level }); wyprawa = r.wyprawa; premie = r.premie; }
-    catch (e) { KUI.toast('Brak połączenia z osadą: ta bitwa nie da łupu.'); }
+    try {
+      const r = await konto.api('POST', '/osada/wyprawa/start', { poziom: pick.level, druzyna: pick.team, oddzialy: pick.oddzialy || [] });
+      wyprawa = r.wyprawa; premie = r.premie; opcje = { rozwoj: r.rozwoj || {}, oddzialy: r.oddzialy || [] };
+      if (r.osada) osada._przyjmij(r);
+    } catch (e) {
+      if (e.kod >= 400 && e.kod < 500) { KUI.toast(e.message); return; }
+      KUI.toast('Brak połączenia z osadą: ta bitwa nie da łupu.');
+    }
   }
-  state = E.newBattle(undefined, pick.team, pick.level, premie);
+  state = E.newBattle(undefined, pick.team, pick.level, premie, opcje);
   state.wyprawa = wyprawa;
   const pl = premie ? Object.entries(premie).filter(([, n]) => n > 0).map(([k, n]) => NAZWY_PREMII[k](n)) : [];
   view = E.clone(state);
   undo = [];
   Object.assign(sel, { heroId: null, dieId: null, mode: null, hlUnit: null });
   $('intro-text').innerHTML = SCENARIO.intro.map((p) => `<p>${p}</p>`).join('');
-  $('intro-goal').textContent = SCENARIO.goal + (pl.length ? ` Premie z osady: ${pl.join(', ')}.` : '');
+  const no = state.units.filter((u) => u.oddzial).length;
+  $('intro-goal').textContent = SCENARIO.goal + (pl.length ? ` Premie z osady: ${pl.join(', ')}.` : '') + (no ? ` Kurhan czuje ${no === 1 ? 'twój oddział' : 'twoje oddziały'}: ${no} ${no === 1 ? 'trup więcej' : no < 5 ? 'trupy więcej' : 'trupów więcej'}.` : '');
   show('screen-battle');
   render();
   overlay('ov-intro');
