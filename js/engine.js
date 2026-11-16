@@ -4,7 +4,7 @@
 import { TERRAIN, HEROES, ENEMIES, DIE_FACES, SCENARIO } from './data.js';
 import { key, parseKey, distance, neighbors } from './hex.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 // ---------- pomocnicze ----------
 
@@ -32,8 +32,14 @@ export function unitDef(u) { return u.side === 'hero' ? HEROES[u.type] : ENEMIES
 
 // ---------- tworzenie bitwy ----------
 
-export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0) {
+export const level = (s) => SCENARIO.levels[s.level];
+
+export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec') {
   const s = {
+    level: lvl,
+    team: team.slice(),
+    summoned: 0,
+    wards: [],
     v: SAVE_VERSION,
     scenario: SCENARIO.id,
     seed,
@@ -50,22 +56,27 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0) {
     bossAwakeRound: null,
     log: [],
   };
-  for (const h of SCENARIO.heroes) {
-    const d = HEROES[h.type];
+  team.forEach((type, i) => {
+    const d = HEROES[type];
+    const at = SCENARIO.heroSlots[i];
     s.units.push({
-      id: s.nextId++, side: 'hero', type: h.type, c: h.at[0], r: h.at[1],
+      id: s.nextId++, side: 'hero', type, c: at[0], r: at[1],
       hp: d.hp, maxHp: d.hp, moveLeft: d.move, attacked: false,
-      runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false,
+      runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false, bonusAtk: 0,
     });
-  }
+  });
   return s;
 }
 
 // ---------- ruch ----------
 
-function enterCost(s, c, r) {
+export const wardAt = (s, c, r) => (s.wards || []).some((w) => w.c === c && w.r === r);
+
+function enterCost(s, c, r, u = null) {
   const t = terrainAt(s, c, r);
-  return t.blocked ? Infinity : t.cost;
+  if (t.blocked || wardAt(s, c, r)) return Infinity;
+  if (u && u.type === 'mistrz-run') return 1;
+  return t.cost;
 }
 
 // Dijkstra po polach osiągalnych dla jednostki. Można przechodzić przez sojuszników, nie można kończyć na zajętym polu.
@@ -78,11 +89,11 @@ export function reachable(s, u, points, reserved = null) {
     const [cost, c, r] = open.shift();
     if (cost > best.get(key(c, r)).cost) continue;
     for (const [nc, nr] of nb(s, c, r)) {
-      const step = enterCost(s, nc, nr);
+      const step = enterCost(s, nc, nr, u);
       const nc2 = cost + step;
       if (nc2 > points) continue;
       const occ = unitAt(s, nc, nr);
-      if (occ && occ.id !== u.id && occ.side !== u.side) continue; // wróg blokuje
+      if (occ && occ.id !== u.id && occ.side !== u.side && u.type !== 'ulfhedinn') continue; // wróg blokuje (poza Ulfhedinnem)
       const k = key(nc, nr);
       const end = !occ && !(reserved && reserved.has(k));
       const prev = best.get(k);
@@ -130,10 +141,11 @@ export function rangeOf(s, u) {
   return rg;
 }
 
-export function heroAttackValue(u) {
+export function heroAttackValue(s, u) {
   const d = HEROES[u.type];
-  let v = d.atk + 2 * u.runes.T;
+  let v = d.atk + 2 * u.runes.T + (u.bonusAtk || 0);
   if (u.type === 'berserker') v += Math.floor((u.maxHp - u.hp) / 4);
+  if (u.type !== 'skald' && s && adjacentHeroes(s, u).some((h) => h.type === 'skald')) v += 1;
   return v;
 }
 
@@ -167,7 +179,7 @@ function applyHeroDamage(s, target, dmg) {
 // ---------- runy ----------
 
 export function rollDice(s) {
-  const n = 2 * livingHeroes(s).length;
+  const n = 2 * livingHeroes(s).length + (livingHeroes(s).some((h) => h.type === 'jarl') ? 1 : 0);
   s.dice = [];
   for (let i = 0; i < n; i++) s.dice.push({ id: i, face: DIE_FACES[Math.floor(rng(s) * 6)], used: false });
 }
@@ -225,7 +237,8 @@ export function attackTargets(s, h) {
 }
 
 function hitEnemy(s, h, e, ev) {
-  const raw = heroAttackValue(h);
+  let raw = heroAttackValue(s, h);
+  if (h.type === 'lowczyni' && e.hp === e.maxHp) raw += 2;
   const dmg = Math.max(1, raw - (ENEMIES[e.type].armor || 0));
   e.hp = Math.max(0, e.hp - dmg);
   ev.push({ type: 'hit', from: h.id, to: e.id, dmg, hp: e.hp, ranged: distance(h.c, h.r, e.c, e.r) > 1 });
@@ -246,11 +259,27 @@ export function heroAttack(s, heroId, enemyId) {
   return ev;
 }
 
+export function wardTargets(s, h) {
+  const out = [];
+  for (let r = 0; r < rows(s); r++) for (let c = 0; c < cols(s); c++) {
+    if (distance(h.c, h.r, c, r) > 3 || terrainAt(s, c, r).blocked || unitAt(s, c, r) || wardAt(s, c, r)) continue;
+    out.push([c, r]);
+  }
+  return out;
+}
+
+export function orderTargets(s) { return livingHeroes(s).filter((x) => x.attacked); }
+
 export function canUsePower(s, h) {
   if (!h || h.hp <= 0 || s.phase !== 'narada' || h.runes.K <= 0) return false;
   if (h.type === 'berserker') return nb(s, h.c, h.r).some(([c, r]) => { const u = unitAt(s, c, r); return u && u.side === 'enemy'; });
   if (h.type === 'tarczowniczka') return !h.guard;
   if (h.type === 'volva') return s.intents.some((i) => !i.canceled);
+  if (h.type === 'skald') return livingHeroes(s).some((x) => x.id !== h.id);
+  if (h.type === 'jarl') return orderTargets(s).length > 0;
+  if (h.type === 'mistrz-run') return wardTargets(s, h).length > 0;
+  if (h.type === 'lowczyni') return h.attacked;
+  if (h.type === 'ulfhedinn') return true;
   return false;
 }
 
@@ -270,6 +299,31 @@ export function usePower(s, heroId, targetId = null) {
     if (!it) return null;
     for (const i of s.intents) if (i.unitId === targetId) i.canceled = true;
     ev.push({ type: 'power', id: h.id, power: 'nic', target: targetId });
+  } else if (h.type === 'skald') {
+    ev.push({ type: 'power', id: h.id, power: 'piesn' });
+    for (const x of livingHeroes(s)) {
+      if (x.id === h.id) continue;
+      const before = x.hp;
+      x.hp = Math.min(x.maxHp, x.hp + 2);
+      x.moveLeft += 1;
+      if (x.hp > before) ev.push({ type: 'heal', id: x.id, amount: x.hp - before, hp: x.hp });
+    }
+  } else if (h.type === 'jarl') {
+    const x = unitById(s, targetId);
+    if (!x || x.hp <= 0 || x.side !== 'hero' || !x.attacked) return null;
+    x.attacked = false;
+    ev.push({ type: 'power', id: h.id, power: 'rozkaz', target: x.id });
+  } else if (h.type === 'mistrz-run') {
+    const [c, r] = targetId || [];
+    if (!wardTargets(s, h).some(([a, b]) => a === c && b === r)) return null;
+    s.wards.push({ c, r, until: s.round + 1 });
+    ev.push({ type: 'power', id: h.id, power: 'runa', at: [c, r] });
+  } else if (h.type === 'lowczyni') {
+    h.attacked = false;
+    ev.push({ type: 'power', id: h.id, power: 'strzal' });
+  } else if (h.type === 'ulfhedinn') {
+    h.bonusAtk = (h.bonusAtk || 0) + 3;
+    ev.push({ type: 'power', id: h.id, power: 'szal' });
   }
   h.runes.K--;
   checkEnd(s, ev);
@@ -340,7 +394,7 @@ export function planIntents(s) {
     s.intents.push(intent);
 
     // Pan Kurhanu przyzywa draugra co drugą rundę od przebudzenia (począwszy od następnej)
-    if (e.type === 'pan-kurhanu' && s.bossAwakeRound !== null && (s.round - s.bossAwakeRound) % 2 === 1) {
+    if (e.type === 'pan-kurhanu' && s.bossAwakeRound !== null && (s.round - s.bossAwakeRound) % 2 === 1 && s.summoned < level(s).summons) {
       const spot = freeNearBarrow(s, reserved);
       if (spot) {
         reserved.add(key(spot[0], spot[1]));
@@ -357,7 +411,7 @@ function barrowHex(s) {
 
 function freeNearBarrow(s, reserved = new Set(), prefer = null) {
   const b = barrowHex(s);
-  const ok = (c, r) => !terrainAt(s, c, r).blocked && !unitAt(s, c, r) && !reserved.has(key(c, r));
+  const ok = (c, r) => !terrainAt(s, c, r).blocked && !wardAt(s, c, r) && !unitAt(s, c, r) && !reserved.has(key(c, r));
   if (prefer && ok(prefer[0], prefer[1])) return prefer;
   // najbliższe wolne pole od kurhanu (BFS po odległości)
   const all = [];
@@ -370,7 +424,8 @@ function spawn(s, type, at, ev) {
   const spot = freeNearBarrow(s, new Set(), at);
   if (!spot) return null;
   const d = ENEMIES[type];
-  const u = { id: s.nextId++, side: 'enemy', type, c: spot[0], r: spot[1], hp: d.hp, maxHp: d.hp };
+  const hp = d.boss ? level(s).bossHp : d.hp;
+  const u = { id: s.nextId++, side: 'enemy', type, c: spot[0], r: spot[1], hp, maxHp: hp };
   s.units.push(u);
   ev.push({ type: 'spawn', id: u.id, unit: clone(u) });
   if (type === 'pan-kurhanu') s.bossAwakeRound = s.round;
@@ -388,9 +443,11 @@ export function startRound(s) {
     h.runes = { T: 0, A: 0, R: 0, K: 0, B: 0 };
     h.shield = 0;
     h.guard = false;
+    h.bonusAtk = 0;
   }
+  s.wards = (s.wards || []).filter((w) => w.until >= s.round);
   ev.push({ type: 'round', round: s.round });
-  for (const w of SCENARIO.waves[s.round] || []) spawn(s, w.type, w.at, ev);
+  for (const w of level(s).waves[s.round] || []) spawn(s, w.type, w.at, ev);
   s.phase = 'narada';
   planIntents(s);
   rollDice(s);
@@ -399,8 +456,23 @@ export function startRound(s) {
 
 export function upcomingWaves(s, ahead = 2) {
   const out = [];
-  for (let r = s.round + 1; r <= s.round + ahead; r++) if (SCENARIO.waves[r]) out.push({ round: r, units: SCENARIO.waves[r].map((w) => w.type) });
+  const W = level(s).waves;
+  for (let r = s.round + 1; r <= s.round + ahead; r++) if (W[r]) out.push({ round: r, units: W[r].map((w) => w.type) });
   return out;
+}
+
+// Ilu trupów jeszcze nie wyszło z kurhanu (bez Pana Kurhanu).
+export function remainingInBarrow(s) {
+  let n = 0;
+  for (const [r, list] of Object.entries(level(s).waves)) if (Number(r) > s.round) n += list.filter((w) => w.type !== 'pan-kurhanu').length;
+  const boss = s.units.find((u) => u.type === 'pan-kurhanu');
+  if (!boss || boss.hp > 0) n += level(s).summons - s.summoned;
+  return n;
+}
+
+export function bossAwakeAt(s) {
+  for (const [r, list] of Object.entries(level(s).waves)) if (list.some((w) => w.type === 'pan-kurhanu')) return Number(r);
+  return null;
 }
 
 function checkEnd(s, ev) {
@@ -428,7 +500,7 @@ export function resolveEnemyTurn(s) {
     if (it.canceled) { ev.push({ type: 'cut', id: e.id }); continue; }
 
     if (it.kind === 'summon') {
-      spawn(s, 'draugr', it.spawn, ev);
+      if (spawn(s, 'draugr', it.spawn, ev)) s.summoned++;
       continue;
     }
 
@@ -438,7 +510,7 @@ export function resolveEnemyTurn(s) {
     for (let i = 1; i < it.path.length; i++) {
       const [c, r] = it.path[i];
       const occ = unitAt(s, c, r);
-      if (occ && occ.side !== e.side) break;
+      if ((occ && occ.side !== e.side) || wardAt(s, c, r)) break;
       walked.push([c, r]);
       if (!occ) lastFree = walked.length - 1;
     }

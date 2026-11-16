@@ -48,6 +48,28 @@ for key, (fn, (cx, cy, r)) in HEROES.items():
     save(im.resize((768, 1152), Image.LANCZOS), f'bohaterowie/{key}.webp', 82)
     save(token(im, cx, cy, r), f'bohaterowie/{key}-zeton.webp', 88)
 
+# --- Pozostali bohaterowie z arkusza 8 postaci (tymczasowo, do czasu portretów HD) ---
+sheet = src('bohaterowie-arkusz.png').convert('RGB')
+SC = [(1, 442), (445, 885), (889, 1329), (1332, 1772)]
+SR = [(1, 442), (444, 886)]
+cell = lambda col, row: sheet.crop((SC[col][0], SR[row][0], SC[col][1], SR[row][1]))
+SHEET_HEROES = {
+    'skald': ((3, 0), (150, 100, 100)),
+    'jarl': ((0, 1), (222, 100, 100)),
+    'mistrz-run': ((1, 1), (185, 110, 105)),
+    'lowczyni': ((2, 1), (165, 95, 100)),
+    'ulfhedinn': ((3, 1), (245, 125, 110)),
+}
+for key, ((col, row), (cx, cy, r)) in SHEET_HEROES.items():
+    p = cell(col, row)
+    if not os.path.exists(os.path.join(SRC, f'bohater-{key}.png')):
+        save(p.resize((512, 512), Image.LANCZOS), f'bohaterowie/{key}-karta.webp', 84)
+        save(token(p, cx, cy, r), f'bohaterowie/{key}-zeton.webp', 88)
+# karty wyboru dla bohaterów z portretami HD: kwadrat z górnej części portretu
+for key in HEROES:
+    im = src(HEROES[key][0]).convert('RGB')
+    save(im.crop((0, 0, 1024, 1024)).resize((512, 512), Image.LANCZOS), f'bohaterowie/{key}-karta.webp', 84)
+
 # --- Draugry (3 panele) ---
 d = src('draugry-arkusz.png').convert('RGB')
 panels = grid(d, [(5, 586), (596, 1177), (1188, 1769)], [(4, 884)], 0)

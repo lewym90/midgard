@@ -1,13 +1,12 @@
 // Panele DOM: bohaterowie, nici Norn, runy, pasek górny, teksty zasad.
-import { HEROES, ENEMIES, RUNES, SCENARIO } from './data.js';
+import { HEROES, ENEMIES, RUNES, SCENARIO, HERO_ORDER, NAMES } from './data.js';
 import { runeSvg } from './runes.js';
-import { heroAttackValue, upcomingWaves, canUsePower, attackTargets } from './engine.js';
+import { heroAttackValue, upcomingWaves, canUsePower, attackTargets, remainingInBarrow, bossAwakeAt, level } from './engine.js';
 
 const $ = (id) => document.getElementById(id);
 
-const NOM = { berserker: 'Berserker', tarczowniczka: 'Tarczowniczka', volva: 'Völva' };
-const GEN = { berserker: 'Berserkera', tarczowniczka: 'Tarczowniczki', volva: 'Völvy' };
-const FALLEN = { berserker: 'Poległ', tarczowniczka: 'Poległa', volva: 'Poległa' };
+const GEN = NAMES.gen;
+const FALLEN = NAMES.fallen;
 
 export const tokenUrl = (u) => `assets/img/${u.side === 'hero' ? 'bohaterowie' : 'wrogowie'}/${u.type}-zeton.webp`;
 
@@ -42,7 +41,7 @@ export function renderHeroes(v, sel, handlers) {
     const card = document.createElement('div');
     card.className = 'hero-card' + (sel.heroId === u.id ? ' selected' : '') + (dead ? ' dead' : '') + (sel.dieId != null && !dead ? ' target-mode' : '');
     const ratio = u.hp / u.maxHp;
-    const atk = heroAttackValue(u);
+    const atk = heroAttackValue(v, u);
     const canAtk = !u.attacked && attackTargets(v, u).length > 0;
     const runeChips = Object.entries(u.runes).flatMap(([f, n]) => Array.from({ length: n }, () => `<span class="rune-chip" title="${RUNES[f].name}">${runeSvg(f)}</span>`)).join('');
     const powerOk = !dead && v.phase === 'narada' && canUsePower(v, u);
@@ -111,7 +110,15 @@ export function renderNorns(v, sel, handlers) {
   }
   const fs = $('foresight');
   const volva = v.units.find((x) => x.type === 'volva' && x.hp > 0);
+  const hadVolva = v.units.some((x) => x.type === 'volva');
   const waves = upcomingWaves(v, 2);
+  const left = remainingInBarrow(v);
+  const boss = v.units.find((x) => x.type === 'pan-kurhanu');
+  const bossLine = !boss
+    ? `Pan Kurhanu śpi. Obudzi się w rundzie ${bossAwakeAt(v)}.`
+    : boss.hp > 0 ? `<b>Pan Kurhanu: ${boss.hp}/${boss.maxHp}</b>. Jego śmierć kończy bitwę, a wszystkie trupy rozsypią się w proch.` : 'Pan Kurhanu nie żyje.';
+  const barrow = `<div class="barrow">W kurhanie czeka jeszcze: <b>${left} ${plural(left, 'trup', 'trupy', 'trupów')}</b>.<div class="boss-line">${bossLine}</div></div>`;
+  $('barrow').innerHTML = barrow;
   if (volva && waves.length) {
     fs.innerHTML = '<h3>Wieszczba Völvy</h3>' + waves.map((w) => {
       const counts = {};
@@ -119,8 +126,8 @@ export function renderNorns(v, sel, handlers) {
       const txt = Object.entries(counts).map(([t, n]) => (n > 1 ? `${n}× ` : '') + ENEMIES[t].name).join(', ');
       return `<p><b>Runda ${w.round}:</b> z kurhanu wstanie ${txt}.</p>`;
     }).join('');
-  } else if (!volva) {
-    fs.innerHTML = '<h3>Wieszczba</h3><p>Völva poległa. Nie wiecie już, co przyjdzie z kurhanu.</p>';
+  } else if (hadVolva && !volva) {
+    fs.innerHTML = '<h3>Wieszczba</h3><p>Völva poległa. Nie wiecie już, kiedy przyjdą kolejni.</p>';
   } else fs.innerHTML = '';
 }
 
@@ -193,12 +200,14 @@ export function rulesHtml() {
     <li><b>Las i skały</b> dają 1 obrażenie mniej, <b>lód</b> 1 więcej.</li>
     <li>Cios zawsze zadaje co najmniej 1 obrażenie. Tarcza z runy Algiz pochłania obrażenia przed utratą życia.</li>
   </ul>
+  <h3>Lodowa runa</h3>
+  <p>Mistrz Run może zablokować pole. Nikt przez nie nie przejdzie do końca następnej rundy. Wróg, którego droga tamtędy prowadzi, zatrzyma się przed runą.</p>
   <h3>Runy</h3>
   <div class="rune-table">${runes}</div>
   <p><b>Hamingja</b>, czyli szczęście rodu: trzy złote monety na całą bitwę. Każda pozwala raz przerzucić wszystkie nierozdane runy.</p>
   <h3>Bohaterowie</h3>
   <ul>
-    ${Object.values(HEROES).map((h) => `<li><b>${h.name}</b> (życie ${h.hp}, ruch ${h.move}, atak ${h.atk}${h.range > 1 ? `, zasięg ${h.range}` : ''}). ${h.passive} Moc <i>${h.power}</i>: ${h.powerDesc}</li>`).join('')}
+    ${HERO_ORDER.map((k) => HEROES[k]).map((h) => `<li><b>${h.name}</b> (życie ${h.hp}, ruch ${h.move}, atak ${h.atk}${h.range > 1 ? `, zasięg ${h.range}` : ''}). ${h.passive} Moc <i>${h.power}</i>: ${h.powerDesc}</li>`).join('')}
   </ul>
   <h3>Wrogowie</h3>
   <ul>
@@ -206,4 +215,40 @@ export function rulesHtml() {
   </ul>
   <h3>Sterowanie</h3>
   <p>Stuknij bohatera na planszy albo jego kartę. Złote pola pokazują, dokąd może pójść, a czerwone obręcze, kogo może zaatakować. Stuknij runę na dole, a potem bohatera, żeby mu ją dać. Stuknij wroga albo jego wpis w Niciach Norn, żeby podświetlić jego zamiar.</p>`;
+}
+
+export function renderTeam(picked, onToggle) {
+  const grid = $('team-grid');
+  grid.innerHTML = '';
+  grid.classList.toggle('full', picked.length >= 3);
+  for (const k of HERO_ORDER) {
+    const d = HEROES[k];
+    const i = picked.indexOf(k);
+    const b = document.createElement('button');
+    b.className = 'pick' + (i >= 0 ? ' on' : '');
+    b.innerHTML = `
+      <div class="pick-art" style="background-image:url(assets/img/bohaterowie/${k}-karta.webp)">${i >= 0 ? `<span class="pick-num">${i + 1}</span>` : ''}</div>
+      <div class="pick-body">
+        <div class="pick-name">${d.name}</div>
+        <div class="pick-role">${d.role}</div>
+        <div class="pick-stats"><span>Życie <b>${d.hp}</b></span><span>Ruch <b>${d.move}</b></span><span>Atak <b>${d.atk}</b>${d.range > 1 ? ` · zasięg ${d.range}` : ''}</span></div>
+        <div class="pick-text">${d.passive}</div>
+        <div class="pick-text"><b>${d.power}</b> (Kenaz): ${d.powerDesc}</div>
+      </div>`;
+    b.addEventListener('click', () => onToggle(k));
+    grid.appendChild(b);
+  }
+}
+
+export function renderLevels(cur, onPick) {
+  const box = $('levels');
+  box.innerHTML = '';
+  for (const [k, l] of Object.entries(SCENARIO.levels)) {
+    const b = document.createElement('button');
+    b.className = 'btn btn-small' + (k === cur ? ' on' : '');
+    b.textContent = l.name;
+    b.addEventListener('click', () => onPick(k));
+    box.appendChild(b);
+  }
+  $('level-desc').textContent = SCENARIO.levels[cur].desc;
 }

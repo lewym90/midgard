@@ -25,6 +25,37 @@ export const HEROES = {
     passive: 'Wieszczba: póki żyje, widzicie, kiedy i co przyjdzie z kurhanu.',
     power: 'Przetnij nić', powerDesc: 'Wybierz wroga: jego zamiar w tej rundzie przepada.',
   },
+  skald: {
+    name: 'Skald', role: 'Wsparcie', hp: 9, move: 2, atk: 1, range: 1,
+    passive: 'Pieśń bojowa: bohaterowie stojący obok niego mają +1 do ataku.',
+    power: 'Pieśń odwagi', powerDesc: 'Każdy inny żywy bohater odzyskuje 2 punkty życia i dostaje +1 ruchu.',
+  },
+  jarl: {
+    name: 'Jarl', role: 'Dowódca', hp: 12, move: 2, atk: 3, range: 1,
+    passive: 'Rozkazy: póki żyje, drużyna rzuca co rundę jedną runą więcej.',
+    power: 'Na mój znak!', powerDesc: 'Wskaż bohatera, który już atakował: może zaatakować jeszcze raz.',
+  },
+  'mistrz-run': {
+    name: 'Mistrz Run', role: 'Mag terenu', hp: 9, move: 2, atk: 2, range: 2,
+    passive: 'Znawca ziemi: las, bagno i skały kosztują go tylko 1 ruchu.',
+    power: 'Lodowa runa', powerDesc: 'Wskaż wolne pole w odległości do 3: do końca następnej rundy nikt przez nie nie przejdzie.',
+  },
+  lowczyni: {
+    name: 'Łowczyni', role: 'Strzelczyni', hp: 9, move: 3, atk: 2, range: 3,
+    passive: 'Pierwsza krew: +2 do ataku przeciw wrogowi, który ma pełne życie.',
+    power: 'Drugi strzał', powerDesc: 'Jeśli już strzelała w tej rundzie, może strzelić jeszcze raz.',
+  },
+  ulfhedinn: {
+    name: 'Ulfhedinn', role: 'Wilczy wojownik', hp: 10, move: 4, atk: 3, range: 1,
+    passive: 'Wilczy krok: może przechodzić przez pola zajęte przez wrogów (nie może na nich stanąć).',
+    power: 'Wilczy szał', powerDesc: '+3 do ataku do końca rundy.',
+  },
+};
+export const HERO_ORDER = ['berserker', 'tarczowniczka', 'volva', 'skald', 'jarl', 'mistrz-run', 'lowczyni', 'ulfhedinn'];
+export const NAMES = {
+  nom: { berserker: 'Berserker', tarczowniczka: 'Tarczowniczka', volva: 'Völva', skald: 'Skald', jarl: 'Jarl', 'mistrz-run': 'Mistrz Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinn' },
+  gen: { berserker: 'Berserkera', tarczowniczka: 'Tarczowniczki', volva: 'Völvy', skald: 'Skalda', jarl: 'Jarla', 'mistrz-run': 'Mistrza Run', lowczyni: 'Łowczyni', ulfhedinn: 'Ulfhedinna' },
+  fallen: { berserker: 'Poległ', tarczowniczka: 'Poległa', volva: 'Poległa', skald: 'Poległ', jarl: 'Poległ', 'mistrz-run': 'Poległ', lowczyni: 'Poległa', ulfhedinn: 'Poległ' },
 };
 
 export const ENEMIES = {
@@ -34,6 +65,7 @@ export const ENEMIES = {
 };
 
 export const RUNES = {
+  I: { name: 'Isa', short: 'Lód', desc: 'Lodowa runa Mistrza Run.' },
   T: { name: 'Tiwaz', short: 'Atak', desc: '+2 do obrażeń bohatera w tej rundzie.' },
   A: { name: 'Algiz', short: 'Tarcza', desc: '+2 tarczy do końca rundy. Tarcza pochłania obrażenia.' },
   R: { name: 'Raidho', short: 'Ruch', desc: '+2 ruchu w tej rundzie.' },
@@ -44,6 +76,9 @@ export const RUNES = {
 export const DIE_FACES = ['T', 'A', 'R', 'K', 'B', 'N'];
 
 // Pierwsza bitwa: Kurhan nad fiordem.
+const D = (c, r) => ({ type: 'draugr', at: [c, r] });
+const L = (c, r) => ({ type: 'lucznik', at: [c, r] });
+const BOSS = { type: 'pan-kurhanu', at: [8, 4] };
 export const SCENARIO = {
   id: 'kurhan',
   title: 'Kurhan nad fiordem',
@@ -60,33 +95,46 @@ export const SCENARIO = {
     'L...S~....L',
     'LL..~~..LLL',
   ],
-  heroes: [
-    { type: 'berserker', at: [1, 2] },
-    { type: 'tarczowniczka', at: [1, 3] },
-    { type: 'volva', at: [0, 3] },
-  ],
-  waves: {
-    1: [
-      { type: 'draugr', at: [7, 1] },
-      { type: 'draugr', at: [7, 5] },
-      { type: 'draugr', at: [9, 4] },
-      { type: 'lucznik', at: [9, 2] },
-    ],
-    2: [{ type: 'draugr', at: [9, 3] }],
-    3: [
-      { type: 'draugr', at: [7, 3] },
-      { type: 'lucznik', at: [9, 2] },
-    ],
-    4: [{ type: 'pan-kurhanu', at: [8, 4] }],
-    5: [{ type: 'draugr', at: [7, 3] }],
-    6: [
-      { type: 'lucznik', at: [9, 2] },
-      { type: 'draugr', at: [9, 3] },
-    ],
+  heroSlots: [[1, 2], [1, 3], [0, 3]],
+  levels: {
+    wedrowiec: {
+      name: 'Wędrowiec', desc: 'Na pierwszą bitwę i dla gości. 7 trupów, Pan Kurhanu słabszy i przyzywa raz.',
+      bossHp: 16, summons: 1,
+      waves: {
+        1: [D(7, 1), D(7, 5), L(9, 2)],
+        3: [D(9, 3)],
+        4: [BOSS],
+        5: [L(9, 2)],
+        6: [D(7, 3)],
+      },
+    },
+    wojownik: {
+      name: 'Wojownik', desc: 'Prawdziwa bitwa. 10 trupów, Pan Kurhanu przyzywa dwa razy.',
+      bossHp: 20, summons: 2,
+      waves: {
+        1: [D(7, 1), D(7, 5), D(9, 4), L(9, 2)],
+        2: [D(9, 3)],
+        3: [D(7, 3), L(9, 2)],
+        4: [BOSS],
+        6: [D(9, 3)],
+      },
+    },
+    ragnarok: {
+      name: 'Ragnarök', desc: 'Dla tych, którzy znają grę. 13 trupów, Pan Kurhanu przyzywa trzy razy.',
+      bossHp: 20, summons: 3,
+      waves: {
+        1: [D(7, 1), D(7, 5), D(9, 4), L(9, 2)],
+        2: [D(9, 3)],
+        3: [D(7, 3), L(9, 2)],
+        4: [BOSS],
+        5: [D(7, 3)],
+        6: [L(9, 2), D(9, 3)],
+      },
+    },
   },
   intro: [
     'Trzecią noc z rzędu psy wyją w stronę fiordu. Rybacy mówią, że stary kurhan nad wodą pękł, a z jego wnętrza bije mróz.',
-    'Jarl wysyła was troje. Berserkera, który nie zna strachu. Tarczowniczkę, która nie zna odwrotu. I starą Völvę, która widzi nici Norn.',
+    'Jarl wysyła troje najlepszych, jakich ma. Nie po to, żeby wygrali z umarłymi, tylko po to, żeby uciszyli tego, który ich budzi.',
     'Zanim wzejdzie słońce, umarli muszą wrócić do ziemi.',
   ],
   win: 'Pan Kurhanu pada w śnieg i tym razem nie wstaje. Draugry rozsypują się w proch, a nad fiordem po raz pierwszy od trzech nocy jest cicho. Skald będzie miał o czym śpiewać.',

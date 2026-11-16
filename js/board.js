@@ -1,6 +1,7 @@
 // Rysowanie planszy na płótnie: teren, nici Norn, żetony, animacje.
 import { center, corners, boardPixelSize, pixelToHex, key, SQRT3 } from './hex.js';
 import { TERRAIN, ENEMIES } from './data.js';
+import { drawRune } from './runes.js';
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
@@ -17,7 +18,7 @@ export class Board {
     this.ctx = canvas.getContext('2d');
     this.img = images;
     this.view = null;
-    this.ui = { selected: null, reach: new Set(), attackable: new Set(), cutMode: false, runeTarget: false, hlUnit: null };
+    this.ui = { selected: null, reach: new Set(), attackable: new Set(), cutMode: false, runeTarget: false, hlUnit: null, wardSpots: new Set(), orderIds: new Set() };
     this.anim = new Map(); // id → {x,y,alpha,scale}
     this.tweens = [];
     this.fx = [];
@@ -279,7 +280,13 @@ export class Board {
       const u = find(ev.id);
       if (u) {
         const [x, y] = this.unitPos(u);
-        this.fx.push({ kind: 'ring', x, y, t0: performance.now(), dur: 0.7, color: ev.power === 'nic' ? '#e8e2d4' : '#f2d38a' });
+        this.fx.push({ kind: 'ring', x, y, t0: performance.now(), dur: 0.7, color: ev.power === 'nic' ? '#e8e2d4' : ev.power === 'runa' ? '#bfe3ff' : '#f2d38a' });
+        const NAME = { wir: 'Wir topora', oslona: 'Przyjmę cios', nic: 'Przetnij nić', piesn: 'Pieśń odwagi', rozkaz: 'Na mój znak!', runa: 'Lodowa runa', strzal: 'Drugi strzał', szal: 'Wilczy szał' };
+        if (NAME[ev.power]) this.float(x, y - S * 0.95, NAME[ev.power], '#f2d38a');
+      }
+      if (ev.power === 'runa') {
+        const [x, y] = this.pos(ev.at[0], ev.at[1]);
+        this.fx.push({ kind: 'frostburst', x, y, t0: performance.now(), dur: 0.7 });
       }
       await this.tween(0.3, () => {});
     }
@@ -326,6 +333,25 @@ export class Board {
       this._hex(g, x, y, s * 0.9);
       g.fillStyle = 'rgba(242,211,138,0.16)'; g.fill();
       g.lineWidth = Math.max(1, s * 0.035); g.strokeStyle = 'rgba(242,211,138,0.7)'; g.stroke();
+    }
+    for (const k of this.ui.wardSpots) {
+      const [c, r] = k.split(',').map(Number);
+      const [x, y] = this.pos(c, r);
+      this._hex(g, x, y, s * 0.9);
+      g.fillStyle = 'rgba(166,207,233,0.16)'; g.fill();
+      g.lineWidth = Math.max(1, s * 0.035); g.strokeStyle = 'rgba(190,225,250,0.75)'; g.stroke();
+    }
+    for (const w of this.view.wards || []) {
+      const [x, y] = this.pos(w.c, w.r);
+      const p = 0.5 + 0.5 * Math.sin(t * 2.2 + w.c);
+      const rg = g.createRadialGradient(x, y, 0, x, y, s * 0.95);
+      rg.addColorStop(0, `rgba(200,235,255,${0.5 + 0.2 * p})`); rg.addColorStop(1, 'rgba(160,210,245,0)');
+      g.fillStyle = rg; g.beginPath(); g.arc(x, y, s * 0.95, 0, Math.PI * 2); g.fill();
+      g.save(); g.shadowColor = 'rgba(170,220,255,1)'; g.shadowBlur = s * 0.5;
+      g.strokeStyle = 'rgba(225,245,255,0.95)'; g.lineWidth = Math.max(1.5, s * 0.05);
+      g.beginPath(); g.arc(x, y, s * 0.55, 0, Math.PI * 2); g.stroke();
+      drawRune(g, 'I', x, y, s * 0.7, '#f2fbff', Math.max(2, s * 0.09));
+      g.restore();
     }
     if (this.hover) {
       const [c, r] = this.hover.split(',').map(Number);
@@ -467,6 +493,10 @@ export class Board {
         g.strokeStyle = `rgba(235,230,220,${0.45 + 0.55 * pulse})`; g.lineWidth = s * 0.06;
         g.beginPath(); g.arc(x, y, R + s * 0.12, 0, Math.PI * 2); g.stroke();
       }
+      if (this.ui.orderIds.has(u.id)) {
+        g.strokeStyle = `rgba(242,211,138,${0.4 + 0.6 * pulse})`; g.lineWidth = s * 0.07;
+        g.beginPath(); g.arc(x, y, R + s * 0.14, 0, Math.PI * 2); g.stroke();
+      }
       if (this.ui.runeTarget && u.side === 'hero') {
         g.strokeStyle = `rgba(242,211,138,${0.4 + 0.6 * pulse})`; g.lineWidth = s * 0.06;
         g.beginPath(); g.arc(x, y, R + s * 0.12, 0, Math.PI * 2); g.stroke();
@@ -517,6 +547,15 @@ export class Board {
       if (u.side === 'hero' && u.guard) {
         g.strokeStyle = `rgba(166,207,233,${0.5 + 0.4 * pulse})`; g.lineWidth = s * 0.05; g.setLineDash([s * 0.1, s * 0.08]);
         g.beginPath(); g.arc(x, y, R + s * 0.9, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+      }
+      if (boss && u.hp > 0) {
+        const mx = x, my = y - R - s * 0.32;
+        g.fillStyle = '#f2d38a'; g.strokeStyle = '#3a0c06'; g.lineWidth = Math.max(1, s * 0.03);
+        g.beginPath(); g.moveTo(mx, my + s * 0.2); g.lineTo(mx - s * 0.16, my); g.lineTo(mx + s * 0.16, my); g.closePath(); g.fill(); g.stroke();
+        g.font = `700 ${Math.round(s * 0.24)}px Cinzel, serif`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.lineWidth = Math.max(2, s * 0.05); g.strokeStyle = 'rgba(0,0,0,0.9)';
+        g.strokeText('CEL', mx, my - s * 0.04); g.fillText('CEL', mx, my - s * 0.04);
+        g.textBaseline = 'middle';
       }
       // numer zamiaru
       const it = v.intents && v.intents.find((i) => i.unitId === u.id && i.kind !== 'summon');

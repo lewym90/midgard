@@ -89,6 +89,42 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .start-version { margin: 0; font-size: 0.7rem; color: var(--ink-faint); letter-spacing: 0.1em; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(1rem); } }
 
+/* ---------- wybór drużyny ---------- */
+#screen-team.active { display: block; overflow-y: auto; background: radial-gradient(ellipse at 50% 0%, rgba(0,0,0,0.2), rgba(0,0,0,0.85) 75%), url(../assets/img/tlo/stol.webp) center/cover; }
+.team-wrap { max-width: 92rem; margin: 0 auto; padding: calc(1rem + var(--safe-t)) calc(1rem + var(--safe-r)) calc(1rem + var(--safe-b)) calc(1rem + var(--safe-l)); display: flex; flex-direction: column; gap: 0.9rem; min-height: 100%; }
+.team-head { text-align: center; }
+.team-title { margin: 0; font-family: var(--display); font-weight: 700; letter-spacing: 0.1em; color: var(--gold-hi); font-size: 1.7rem; text-shadow: 0 0.2rem 0.6rem #000; }
+.team-sub { margin: 0.2rem 0 0; color: var(--ink-dim); font-style: italic; }
+.team-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7rem; }
+.pick { position: relative; display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 0.5rem; overflow: hidden; border: 1px solid rgba(212,166,74,0.3); background: var(--panel-shade), url(../assets/img/material/dab.webp) center/14rem; box-shadow: 0 0.5rem 1.4rem rgba(0,0,0,0.6); transition: transform 0.15s, border-color 0.2s, box-shadow 0.2s, filter 0.2s; }
+.pick:hover { border-color: rgba(242,211,138,0.7); }
+.pick.on { border-color: var(--gold-hi); box-shadow: 0 0 0 1px var(--gold), 0 0 1.6rem rgba(242,211,138,0.35), 0 0.5rem 1.4rem rgba(0,0,0,0.6); transform: translateY(-0.2rem); }
+.team-grid.full .pick:not(.on) { filter: brightness(0.6) saturate(0.7); }
+.pick-art { aspect-ratio: 16 / 9; background: center 20%/cover no-repeat; position: relative; }
+.pick-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 50%, rgba(10,8,7,0.95) 100%); }
+.pick-num { position: absolute; top: 0.5rem; right: 0.5rem; z-index: 2; width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; font-family: var(--display); font-weight: 700; color: #2a1906; background: radial-gradient(circle at 35% 30%, #fff3c4, #d4a64a 50%, #6b4a14); box-shadow: 0 0 0.8rem rgba(242,211,138,0.7); }
+.pick-body { padding: 0 0.7rem 0.7rem; margin-top: -1.6rem; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 0.25rem; }
+.pick-name { font-family: var(--display); font-weight: 700; font-size: 1.05rem; color: var(--gold-hi); letter-spacing: 0.05em; text-shadow: 0 0.1rem 0.4rem #000; }
+.pick-role { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-faint); }
+.pick-stats { display: flex; gap: 0.7rem; font-size: 0.8rem; color: var(--ink-dim); }
+.pick-stats b { color: var(--ink); }
+.pick-text { font-size: 0.78rem; line-height: 1.3; color: var(--ink-dim); }
+.pick-text b { color: var(--ink); font-weight: 700; }
+.team-foot { position: sticky; bottom: calc(-1rem - var(--safe-b)); margin: 0 -1rem calc(-1rem - var(--safe-b)); padding: 1.6rem 1rem calc(1.3rem + var(--safe-b)); display: flex; flex-direction: column; align-items: center; gap: 0.5rem; background: linear-gradient(180deg, rgba(8,6,5,0), rgba(8,6,5,0.92) 30%, rgba(8,6,5,0.97)); z-index: 5; }
+.team-wrap { padding-bottom: 0 !important; }
+.levels { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.levels .btn.on { border-color: var(--gold-hi); color: var(--gold-hi); box-shadow: 0 0 0 1px var(--gold), 0 0 1rem rgba(242,211,138,0.3); }
+.level-desc { margin: 0; color: var(--ink-dim); font-size: 0.9rem; text-align: center; min-height: 1.3em; }
+.team-actions { display: flex; gap: 0.7rem; }
+.team-actions .btn { min-width: 9rem; }
+@media (max-width: 1000px) { .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-height: 560px) and (orientation: landscape) { .team-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .pick-text { display: none; } .pick-art { aspect-ratio: 16 / 8; } .team-title { font-size: 1.3rem; } }
+
+.barrow { margin: 0 0 0.6rem; padding: 0.55rem 0.6rem; border-radius: 0.4rem; border: 1px solid rgba(166,207,233,0.3); background: rgba(20,35,50,0.35); font-size: 0.82rem; color: var(--ink-dim); line-height: 1.35; }
+.barrow b { color: var(--frost); }
+.barrow .boss-line { margin-top: 0.3rem; color: var(--ink); }
+.barrow .boss-line b { color: #ef7a64; }
+
 /* ---------- ekran bitwy ---------- */
 #screen-battle.active {
   display: grid;

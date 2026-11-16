@@ -2,11 +2,12 @@
 import * as E from './engine.js';
 import { Board } from './board.js';
 import * as UI from './ui.js';
-import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN } from './data.js';
+import { HEROES, ENEMIES, RUNES, SCENARIO, TERRAIN, HERO_ORDER, NAMES } from './data.js';
 import { key } from './hex.js';
 import { audio } from './audio.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
+const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +17,8 @@ let undo = [];
 let busy = false;
 let board = null;
 const sel = { heroId: null, dieId: null, mode: null, hlUnit: null };
+let pick = { team: ['berserker', 'tarczowniczka', 'volva'], level: 'wedrowiec' };
+try { const p = JSON.parse(localStorage.getItem(PREF_KEY)); if (p && p.team && p.level) pick = p; } catch (e) {}
 
 // ---------- zapis ----------
 const store = {
@@ -29,7 +32,7 @@ function loadImages() {
   const list = {
     'teren-snieg': 'teren/snieg', 'teren-las': 'teren/las', 'teren-lod': 'teren/lod', 'teren-bagno': 'teren/bagno',
     'teren-skaly': 'teren/skaly', 'teren-kurhan': 'teren/kurhan',
-    'zeton-berserker': 'bohaterowie/berserker-zeton', 'zeton-tarczowniczka': 'bohaterowie/tarczowniczka-zeton', 'zeton-volva': 'bohaterowie/volva-zeton',
+    ...Object.fromEntries(HERO_ORDER.map((k) => ['zeton-' + k, `bohaterowie/${k}-zeton`])),
     'zeton-draugr': 'wrogowie/draugr-zeton', 'zeton-lucznik': 'wrogowie/lucznik-zeton', 'zeton-pan-kurhanu': 'wrogowie/pan-kurhanu-zeton',
   };
   const out = {};
@@ -68,8 +71,13 @@ function banner(t1, t2 = '', cls = '', ms = 1300) {
 
 // ---------- rysowanie stanu ----------
 function syncBoardUI() {
-  const ui = { selected: sel.heroId, reach: new Set(), attackable: new Set(), cutMode: sel.mode === 'cut', runeTarget: sel.dieId != null, hlUnit: sel.hlUnit };
-  if (!busy && view.phase === 'narada' && sel.heroId != null) {
+  const ui = { selected: sel.heroId, reach: new Set(), attackable: new Set(), cutMode: sel.mode === 'cut', runeTarget: sel.dieId != null, hlUnit: sel.hlUnit, wardSpots: new Set(), orderIds: new Set() };
+  if (!busy && view.phase === 'narada' && sel.mode === 'ward') {
+    const mr = state.units.find((u) => u.type === 'mistrz-run' && u.hp > 0);
+    if (mr) for (const [c, r] of E.wardTargets(state, mr)) ui.wardSpots.add(key(c, r));
+  }
+  if (!busy && view.phase === 'narada' && sel.mode === 'order') for (const h of E.orderTargets(state)) ui.orderIds.add(h.id);
+  if (!busy && view.phase === 'narada' && sel.heroId != null && !sel.mode) {
     const h = E.unitById(state, sel.heroId);
     if (h && h.hp > 0) {
       for (const [k, v] of E.heroMoves(state, h)) if (v.end && k !== key(h.c, h.r)) ui.reach.add(k);
@@ -96,6 +104,8 @@ function updateHint(extra) {
   if (busy || view.phase === 'wrog') return UI.setHint('Umarli wykonują swoje zamiary…');
   if (view.phase !== 'narada') return UI.setHint('');
   if (sel.mode === 'cut') return UI.setHint('<b>Völva:</b> wskaż wroga na planszy albo na liście Nici Norn. Jego zamiar w tej rundzie przepadnie.');
+  if (sel.mode === 'ward') return UI.setHint('<b>Mistrz Run:</b> wskaż podświetlone pole. Do końca następnej rundy nikt przez nie nie przejdzie.');
+  if (sel.mode === 'order') return UI.setHint('<b>Jarl:</b> wskaż bohatera, który już atakował. Będzie mógł zaatakować jeszcze raz.');
   if (sel.dieId != null) {
     const d = state.dice.find((x) => x.id === sel.dieId);
     return UI.setHint(`<b>${RUNES[d.face].name}</b>: ${RUNES[d.face].desc} Stuknij bohatera, który ma ją dostać.`);
@@ -103,7 +113,7 @@ function updateHint(extra) {
   if (sel.heroId != null) {
     const h = E.unitById(state, sel.heroId);
     const d = HEROES[h.type];
-    return UI.setHint(`<b>${d.name}</b>: ruch ${h.moveLeft}, atak ${E.heroAttackValue(h)}${h.attacked ? ' (już atakował)' : ''}. Złote pola: dokąd może pójść. Czerwona obręcz: kogo może zaatakować.`);
+    return UI.setHint(`<b>${d.name}</b>: ruch ${h.moveLeft}, atak ${E.heroAttackValue(state, h)}${h.attacked ? ' (już atakował)' : ''}. Złote pola: dokąd może pójść. Czerwona obręcz: kogo może zaatakować.`);
   }
   UI.setHint('<b>Narada.</b> Wybierz bohatera, żeby nim ruszyć albo zaatakować. Stuknij runę na dole, a potem bohatera, żeby mu ją dać.');
 }
@@ -121,6 +131,7 @@ function applyEvent(v, ev) {
   else if (ev.type === 'phase') v.phase = ev.phase;
   else if (ev.type === 'power' && ev.power === 'nic') for (const i of v.intents) if (i.unitId === ev.target) i.canceled = true;
   else if (ev.type === 'power' && ev.power === 'oslona') { const x = u(ev.id); if (x) x.guard = true; }
+  else if (ev.type === 'power' && ev.power === 'runa') { v.wards = (v.wards || []).concat([{ c: ev.at[0], r: ev.at[1], until: v.round + 1 }]); }
 }
 
 const SOUND = { move: 'krok', spawn: 'przyzwanie', frost: 'mroz', heal: 'leczenie', cut: 'nic' };
@@ -134,11 +145,11 @@ async function play(events) {
     if (ev.type === 'round') {
       newRound = true;
       applyEvent(view, ev); render();
-      await banner(`Runda ${ev.round}`, ev.round === 1 ? 'Umarli wychodzą z kurhanu' : SCENARIO.waves[ev.round] ? 'Kurhan znów się otwiera' : 'Norny tkają nowe nici', '', 1150);
+      await banner(`Runda ${ev.round}`, ev.round === 1 ? 'Umarli wychodzą z kurhanu' : E.level(state).waves[ev.round] ? 'Kurhan znów się otwiera' : 'Norny tkają nowe nici', '', 1150);
       continue;
     }
     if (ev.type === 'frost') { await banner('Mróz', 'Zima zabiera kolejną część pola bitwy', 'frost', 900); }
-    if (ev.type === 'spawn' && ev.unit.type === 'pan-kurhanu') await banner('Pan Kurhanu', 'Dawny wódz wstaje z grobu', 'red', 1300);
+    if (ev.type === 'spawn' && ev.unit.type === 'pan-kurhanu') await banner('Pan Kurhanu', 'Wstaje z grobu. Jego śmierć zakończy bitwę.', 'red', 1700);
     if (ev.type === 'hit') audio.play(ev.ranged ? 'strzal' : ev.absorbed && !ev.dmg ? 'tarcza' : 'cios');
     if (ev.type === 'death') { const x = view.units.find((y) => y.id === ev.id); audio.play(x && x.side === 'hero' ? 'bohater_pada' : 'smierc'); }
     if (SOUND[ev.type]) audio.play(SOUND[ev.type]);
@@ -201,10 +212,18 @@ function onDie(id) {
   render();
 }
 
+async function powerOn(type, target) {
+  const h = state.units.find((u) => u.type === type && u.hp > 0);
+  sel.mode = null;
+  if (h) await act((s) => E.usePower(s, h.id, target));
+  render();
+}
+
 function onHeroCard(id) {
   if (busy) return;
   audio.unlock();
   if (sel.dieId != null) return giveDie(sel.dieId, id);
+  if (sel.mode === 'order') { if (E.orderTargets(state).some((h) => h.id === id)) return powerOn('jarl', id); }
   sel.mode = null;
   sel.heroId = sel.heroId === id ? null : id;
   render();
@@ -214,8 +233,9 @@ async function onPower(id) {
   if (busy) return;
   audio.unlock();
   const h = E.unitById(state, id);
-  if (h.type === 'volva') {
-    sel.mode = sel.mode === 'cut' ? null : 'cut';
+  const MODE = { volva: 'cut', jarl: 'order', 'mistrz-run': 'ward' };
+  if (MODE[h.type]) {
+    sel.mode = sel.mode === MODE[h.type] ? null : MODE[h.type];
     sel.dieId = null;
     render();
     return;
@@ -247,6 +267,15 @@ async function onTap(c, r) {
   }
   if (sel.mode === 'cut') {
     if (u && u.side === 'enemy' && state.intents.some((i) => i.unitId === u.id && !i.canceled)) return cutThread(u.id);
+    sel.mode = null; render(); return;
+  }
+  if (sel.mode === 'ward') {
+    const mr = state.units.find((x) => x.type === 'mistrz-run' && x.hp > 0);
+    if (mr && E.wardTargets(state, mr).some(([a, b]) => a === c && b === r)) return powerOn('mistrz-run', [c, r]);
+    sel.mode = null; render(); return;
+  }
+  if (sel.mode === 'order') {
+    if (u && E.orderTargets(state).includes(u)) return powerOn('jarl', u.id);
     sel.mode = null; render(); return;
   }
   if (u && u.side === 'hero') { sel.heroId = sel.heroId === u.id ? null : u.id; sel.hlUnit = null; render(); return; }
@@ -319,15 +348,33 @@ function showEnd() {
   const win = state.result === 'win';
   $('end-title').textContent = win ? 'Zwycięstwo' : 'Klęska';
   const alive = E.livingHeroes(state).length;
-  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${E.livingHeroes(state).length} z 3 bohaterów.</p>`;
+  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów. Poziom: ${E.level(state).name}.</p>`;
   overlay('ov-end');
   store.clear();
 }
 
 // ---------- start bitwy ----------
+function openTeam() {
+  const draw = () => {
+    UI.renderTeam(pick.team, (k) => {
+      const i = pick.team.indexOf(k);
+      if (i >= 0) pick.team.splice(i, 1);
+      else if (pick.team.length < 3) pick.team.push(k);
+      draw();
+    });
+    UI.renderLevels(pick.level, (l) => { pick.level = l; draw(); });
+    const go = $('btn-team-go');
+    go.disabled = pick.team.length !== 3;
+    go.textContent = pick.team.length === 3 ? 'Dalej' : `Wybierz jeszcze ${3 - pick.team.length}`;
+  };
+  draw();
+  show('screen-team');
+}
+
 async function newBattle() {
   store.clear();
-  state = E.newBattle();
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(pick)); } catch (e) {}
+  state = E.newBattle(undefined, pick.team, pick.level);
   view = E.clone(state);
   undo = [];
   Object.assign(sel, { heroId: null, dieId: null, mode: null, hlUnit: null });
@@ -369,7 +416,9 @@ async function boot() {
   new ResizeObserver(() => { board.resize(); }).observe($('board-wrap'));
   if (document.fonts) document.fonts.ready.then(() => board.resize());
 
-  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; newBattle(); };
+  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; openTeam(); };
+  $('btn-team-back').onclick = () => show('screen-start');
+  $('btn-team-go').onclick = () => { if (pick.team.length === 3) newBattle(); };
   $('btn-continue').onclick = () => { audio.unlock(); continueBattle(); };
   $('btn-rules').onclick = () => overlay('ov-rules');
   $('btn-rules-close').onclick = () => overlay('ov-rules', false);
@@ -381,16 +430,16 @@ async function boot() {
   $('btn-menu').onclick = () => overlay('ov-menu');
   $('m-resume').onclick = () => overlay('ov-menu', false);
   $('m-rules').onclick = () => { overlay('ov-menu', false); overlay('ov-rules'); };
-  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) newBattle(); };
+  $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); pick.level = state.level; newBattle(); } };
   $('m-exit').onclick = () => { overlay('ov-menu', false); store.save(); refreshStart(); show('screen-start'); };
-  $('btn-end-again').onclick = () => { overlay('ov-end', false); newBattle(); };
+  $('btn-end-again').onclick = () => { overlay('ov-end', false); openTeam(); };
   $('btn-end-menu').onclick = () => { overlay('ov-end', false); refreshStart(); show('screen-start'); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { sel.heroId = null; sel.dieId = null; sel.mode = null; sel.hlUnit = null; if (view) render(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') doUndo();
   });
 
-  window.midgard = { state: () => state, view: () => view, board, busy: () => busy };
+  window.midgard = { state: () => state, view: () => view, board, busy: () => busy, render: () => { view = E.clone(state); render(); } };
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 

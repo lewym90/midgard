@@ -45,17 +45,30 @@ function botRound(s, smart) {
       if (h.type === 'volva') {
         const it = s.intents.find((i) => !i.canceled && i.attack);
         if (it) E.usePower(s, h.id, it.unitId);
+      } else if (h.type === 'jarl') {
+        const t = E.orderTargets(s)[0]; if (t) E.usePower(s, h.id, t.id);
+      } else if (h.type === 'mistrz-run') {
+        const it = s.intents.find((i) => !i.canceled && i.path.length > 1);
+        const tg = E.wardTargets(s, h);
+        const spot = it && tg.find(([c, r]) => c === it.path[1][0] && r === it.path[1][1]);
+        if (spot) E.usePower(s, h.id, spot);
       } else E.usePower(s, h.id);
+      if (h.type === 'lowczyni' || h.type === 'ulfhedinn') tryAttack();
     }
   }
 }
 
 const N = Number(process.argv[2] || 300);
-const stats = { win: 0, lose: 0, rounds: 0, czas: 0 };
+const ALL = ['berserker', 'tarczowniczka', 'volva', 'skald', 'jarl', 'mistrz-run', 'lowczyni', 'ulfhedinn'];
+const teams = [];
+for (let a = 0; a < 8; a++) for (let b = a + 1; b < 8; b++) for (let c = b + 1; c < 8; c++) teams.push([ALL[a], ALL[b], ALL[c]]);
+const perHero = {};
+for (const lvl of ['wedrowiec', 'wojownik', 'ragnarok'])
 for (const smart of [false, true]) {
   const st = { win: 0, lose: 0, rounds: 0 };
   for (let i = 0; i < N; i++) {
-    const s = E.newBattle(i * 7919 + 13);
+    const team = teams[i % teams.length];
+    const s = E.newBattle(i * 7919 + 13, team, lvl);
     E.startRound(s);
     let guard = 0;
     while (!s.result && guard++ < 50) {
@@ -74,6 +87,9 @@ for (const smart of [false, true]) {
     }
     st[s.result]++;
     st.rounds += s.round;
+    if (smart && lvl === 'wojownik') for (const t of team) { perHero[t] = perHero[t] || [0, 0]; perHero[t][0] += s.result === 'win'; perHero[t][1]++; }
   }
-  console.log(smart ? 'bot sprytny' : 'bot prosty', st, 'średnio rund', (st.rounds / N).toFixed(1));
+  console.log(lvl, smart ? 'bot sprytny' : 'bot prosty', 'wygrane', Math.round(100 * st.win / N) + '%', 'średnio rund', (st.rounds / N).toFixed(1));
 }
+console.log('Wojownik, sprytny bot — % wygranych drużyn z danym bohaterem:');
+for (const [k, [w, n]] of Object.entries(perHero)) console.log('  ', k.padEnd(14), Math.round(100 * w / n) + '%');
