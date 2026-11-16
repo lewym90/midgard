@@ -34,11 +34,14 @@ export function unitDef(u) { return u.side === 'hero' ? HEROES[u.type] : ENEMIES
 
 export const level = (s) => SCENARIO.levels[s.level];
 
-export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec') {
+export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berserker', 'tarczowniczka', 'volva'], lvl = 'wedrowiec', premie = null) {
+  const P = { zycie: 0, atak: 0, hamingja: 0, runy: 0, ...(premie || {}) };
   const s = {
     level: lvl,
     team: team.slice(),
     summoned: 0,
+    premie: P,
+    wyprawa: null,
     wards: [],
     v: SAVE_VERSION,
     scenario: SCENARIO.id,
@@ -48,7 +51,7 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
     phase: 'start',
     result: null,
     frost: 0,
-    hamingja: 3,
+    hamingja: 3 + P.hamingja,
     units: [],
     dice: [],
     intents: [],
@@ -61,7 +64,7 @@ export function newBattle(seed = (Date.now() & 0xffffffff) >>> 0, team = ['berse
     const at = SCENARIO.heroSlots[i];
     s.units.push({
       id: s.nextId++, side: 'hero', type, c: at[0], r: at[1],
-      hp: d.hp, maxHp: d.hp, moveLeft: d.move, attacked: false,
+      hp: d.hp + P.zycie, maxHp: d.hp + P.zycie, moveLeft: d.move, attacked: false,
       runes: { T: 0, A: 0, R: 0, K: 0, B: 0 }, shield: 0, guard: false, bonusAtk: 0,
     });
   });
@@ -143,7 +146,7 @@ export function rangeOf(s, u) {
 
 export function heroAttackValue(s, u) {
   const d = HEROES[u.type];
-  let v = d.atk + 2 * u.runes.T + (u.bonusAtk || 0);
+  let v = d.atk + 2 * u.runes.T + (u.bonusAtk || 0) + ((s && s.premie && s.premie.atak) || 0);
   if (u.type === 'berserker') v += Math.floor((u.maxHp - u.hp) / 4);
   if (u.type !== 'skald' && s && adjacentHeroes(s, u).some((h) => h.type === 'skald')) v += 1;
   return v;
@@ -179,7 +182,7 @@ function applyHeroDamage(s, target, dmg) {
 // ---------- runy ----------
 
 export function rollDice(s) {
-  const n = 2 * livingHeroes(s).length + (livingHeroes(s).some((h) => h.type === 'jarl') ? 1 : 0);
+  const n = 2 * livingHeroes(s).length + (livingHeroes(s).some((h) => h.type === 'jarl') ? 1 : 0) + ((s.premie && s.premie.runy) || 0);
   s.dice = [];
   for (let i = 0; i < n; i++) s.dice.push({ id: i, face: DIE_FACES[Math.floor(rng(s) * 6)], used: false });
 }

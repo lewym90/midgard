@@ -59,10 +59,30 @@
       <p class="start-tag">Kooperacyjna saga dla 1–8 graczy przy jednym stole</p>
       <div class="start-menu">
         <button class="btn btn-gold" id="btn-continue" hidden>Kontynuuj bitwę</button>
+        <button class="btn btn-gold" id="btn-osada" hidden>Twoja osada</button>
         <button class="btn btn-gold" id="btn-new">Bitwa: Kurhan nad fiordem</button>
         <button class="btn" id="btn-rules">Jak grać</button>
       </div>
       <p class="start-version" id="version"></p>
+    </div>
+  </section>
+
+  <!-- OSADA -->
+  <section id="screen-osada" class="screen">
+    <header class="o-top">
+      <button class="icon-btn" id="o-wroc" aria-label="Menu główne"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="o-res" id="o-res"></div>
+    </header>
+    <div class="o-mapa" id="o-mapa"><canvas id="o-canvas"></canvas>
+      <div class="o-podp" id="o-podp" hidden></div>
+    </div>
+    <footer class="o-dol">
+      <button class="btn" id="o-zbierz">Zbierz wszystko</button>
+      <button class="btn btn-gold" id="o-wyprawa">Wyprawa</button>
+    </footer>
+    <div class="o-sheet iron" id="o-sheet" hidden>
+      <button class="icon-btn o-x" id="o-sheet-zamknij" aria-label="Zamknij"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div id="o-sheet-body"></div>
     </div>
   </section>
 
@@ -171,7 +191,7 @@
         <button class="btn" id="m-music"></button>
         <button class="btn" id="m-sfx"></button>
         <button class="btn" id="m-restart">Zacznij bitwę od nowa</button>
-        <button class="btn" id="m-exit">Wyjdź do menu głównego</button>
+        <button class="btn" id="m-exit">Wyjdź z bitwy (zapisana)</button>
       </div>
     </div>
   </div>

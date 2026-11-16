@@ -7,8 +7,9 @@ import { key, distance } from './hex.js';
 import { audio } from './audio.js';
 import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
+import { osada } from './osada.js';
 
-const VERSION = '0.4.3';
+const VERSION = '0.5.0';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -65,7 +66,13 @@ function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id === id);
   if (id === 'screen-battle' && board) requestAnimationFrame(() => board.resize());
   if (id === 'screen-battle') updateMusic(); else audio.music('hymn');
+  if (id === 'screen-osada') osada.otworz();
 }
+
+// Dokąd wracać z bitwy i z wyboru drużyny
+function domEkran() { return konto.zalogowany ? 'screen-osada' : 'screen-start'; }
+const NAZWY_PREMII = { zycie: (n) => `+${n} życia`, atak: (n) => `+${n} ataku`, hamingja: (n) => `+${n} ${n === 1 ? 'moneta' : 'monety'} Hamingji`, runy: (n) => `+${n} ${n === 1 ? 'runa' : 'runy'} na rundę` };
+const NAZWY_SUR = { drewno: 'drewno', zelazo: 'żelazo', zywnosc: 'żywność', srebro: 'srebro' };
 
 // ---------- muzyka bitwy: poziom napięcia z sytuacji na planszy ----------
 function battleTrack() {
@@ -387,9 +394,26 @@ function showEnd() {
   audio.music(win ? 'zwyciestwo' : 'porazka');
   $('end-title').textContent = win ? 'Zwycięstwo' : 'Klęska';
   const alive = E.livingHeroes(state).length;
-  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów. Poziom: ${E.level(state).name}.</p>`;
+  $('end-text').innerHTML = `<p>${win ? SCENARIO.win : alive ? SCENARIO.loseTime : SCENARIO.lose}</p><p class="stats">Bitwa trwała ${state.round} ${state.round === 1 ? 'rundę' : state.round < 5 ? 'rundy' : 'rund'}. Przeżyło ${alive} z ${state.team.length} bohaterów. Poziom: ${E.level(state).name}.</p><p class="stats" id="end-lup">${state.wyprawa ? 'Liczę łup…' : konto.zalogowany ? 'Ta bitwa nie była wyprawą z osady, więc nie daje łupu.' : ''}</p>`;
+  $('btn-end-menu').textContent = konto.zalogowany ? 'Wróć do osady' : 'Menu główne';
   overlay('ov-end');
+  const wyprawa = state.wyprawa;
   store.clear();
+  if (wyprawa) rozliczWyprawe(wyprawa, state.result);
+}
+
+async function rozliczWyprawe(id, wynik) {
+  const el = () => $('end-lup');
+  try {
+    const r = await konto.api('POST', '/osada/wyprawa/koniec', { id, wynik });
+    const d = r.lup.dodane, st = r.lup.stracone;
+    const czesci = Object.keys(NAZWY_SUR).filter((k) => d[k]).map((k) => `${NAZWY_SUR[k]} +${d[k]}`);
+    const przep = Object.keys(NAZWY_SUR).filter((k) => st[k] > 0).map((k) => `${NAZWY_SUR[k]} ${st[k]}`);
+    let t = `Łup do osady: ${czesci.length ? czesci.join(', ') : 'nic się nie zmieściło'}${r.lup.slawa ? `, sława +${r.lup.slawa}` : ''}.`;
+    if (przep.length) t += ` Nie zmieściło się w magazynach: ${przep.join(', ')}.`;
+    if (el()) el().textContent = t;
+    osada._przyjmij && osada._przyjmij(r);
+  } catch (e) { if (el()) el().textContent = 'Łup: ' + e.message; }
 }
 
 // ---------- start bitwy ----------
@@ -412,12 +436,20 @@ function openTeam() {
 
 async function newBattle() {
   store.clear();
-  state = E.newBattle(undefined, pick.team, pick.level);
+  // wyprawa z osady: premie z budynków i łup po bitwie
+  let wyprawa = null, premie = null;
+  if (konto.zalogowany && pick.zOsady) {
+    try { const r = await konto.api('POST', '/osada/wyprawa/start', { poziom: pick.level }); wyprawa = r.wyprawa; premie = r.premie; }
+    catch (e) { KUI.toast('Brak połączenia z osadą: ta bitwa nie da łupu.'); }
+  }
+  state = E.newBattle(undefined, pick.team, pick.level, premie);
+  state.wyprawa = wyprawa;
+  const pl = premie ? Object.entries(premie).filter(([, n]) => n > 0).map(([k, n]) => NAZWY_PREMII[k](n)) : [];
   view = E.clone(state);
   undo = [];
   Object.assign(sel, { heroId: null, dieId: null, mode: null, hlUnit: null });
   $('intro-text').innerHTML = SCENARIO.intro.map((p) => `<p>${p}</p>`).join('');
-  $('intro-goal').textContent = SCENARIO.goal;
+  $('intro-goal').textContent = SCENARIO.goal + (pl.length ? ` Premie z osady: ${pl.join(', ')}.` : '');
   show('screen-battle');
   render();
   overlay('ov-intro');
@@ -440,6 +472,9 @@ function continueBattle() {
 
 function refreshStart() {
   $('btn-continue').hidden = !store.load();
+  $('btn-osada').hidden = !konto.zalogowany;
+  $('btn-new').textContent = konto.zalogowany ? 'Szybka bitwa (bez łupu)' : 'Bitwa: Kurhan nad fiordem';
+  $('btn-new').classList.toggle('btn-gold', !konto.zalogowany);
   $('konto-nick').textContent = konto.zalogowany ? konto.nick : 'Bez konta';
   pokazStatus(konto.zalogowany ? konto.status : 'gosc');
 }
@@ -515,8 +550,14 @@ async function boot() {
   };
   $('m-music').onclick = () => { audio.setPref('music', !audio.prefs.music); refreshSound(); };
   $('m-sfx').onclick = () => { audio.setPref('sfx', !audio.prefs.sfx); refreshSound(); };
-  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; openTeam(); };
-  $('btn-team-back').onclick = () => show('screen-start');
+  $('btn-new').onclick = async () => { audio.unlock(); if (store.load() && !(await confirmBox('Nowa bitwa?', 'Zapisana bitwa zostanie utracona.'))) return; pick.zOsady = false; openTeam(); };
+  $('btn-team-back').onclick = () => show(pick.zOsady ? 'screen-osada' : 'screen-start');
+  $('btn-osada').onclick = () => { audio.unlock(); show('screen-osada'); };
+  osada.init(async () => {
+    audio.unlock();
+    if (store.load() && !(await confirmBox('Nowa wyprawa?', 'Masz niedokończoną bitwę. Zostanie utracona.'))) return;
+    pick.zOsady = true; openTeam();
+  }, () => { refreshStart(); show('screen-start'); });
   $('btn-team-go').onclick = () => { if (pick.team.length === 3) newBattle(); };
   $('btn-continue').onclick = () => { audio.unlock(); continueBattle(); };
   $('btn-rules').onclick = () => overlay('ov-rules');
@@ -530,15 +571,15 @@ async function boot() {
   $('m-resume').onclick = () => overlay('ov-menu', false);
   $('m-rules').onclick = () => { overlay('ov-menu', false); overlay('ov-rules'); };
   $('m-restart').onclick = async () => { overlay('ov-menu', false); if (await confirmBox('Zacząć od nowa?', 'Obecna bitwa przepadnie.')) { pick.team = state.team.slice(); pick.level = state.level; newBattle(); } };
-  $('m-exit').onclick = () => { overlay('ov-menu', false); store.save(); refreshStart(); show('screen-start'); };
+  $('m-exit').onclick = () => { overlay('ov-menu', false); store.save(); refreshStart(); show(domEkran()); };
   $('btn-end-again').onclick = () => { overlay('ov-end', false); openTeam(); };
-  $('btn-end-menu').onclick = () => { overlay('ov-end', false); refreshStart(); show('screen-start'); };
+  $('btn-end-menu').onclick = () => { overlay('ov-end', false); refreshStart(); show(domEkran()); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { sel.heroId = null; sel.dieId = null; sel.mode = null; sel.hlUnit = null; if (view) render(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') doUndo();
   });
 
-  window.midgard = { audio, state: () => state, view: () => view, board, busy: () => busy, render: () => { view = E.clone(state); render(); } };
+  window.midgard = { osada, audio, state: () => state, view: () => view, board, busy: () => busy, render: () => { view = E.clone(state); render(); } };
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 

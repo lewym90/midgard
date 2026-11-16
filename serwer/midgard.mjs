@@ -6,8 +6,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import * as O from './osada-dane.js';
 
-const WERSJA = '1.1.0';
+const WERSJA = '1.2.0';
 const PORT = Number(process.env.PORT || 18900);
 const DANE = process.env.MIDGARD_DANE || './dane';
 const ORIGINS = (process.env.MIDGARD_ORIGINS || 'https://lewym90.github.io,http://localhost:8765,http://127.0.0.1:8765').split(',');
@@ -28,6 +29,7 @@ db.exec(`
     kod TEXT PRIMARY KEY, admin INTEGER NOT NULL DEFAULT 0, utworzone INTEGER NOT NULL, przez INTEGER,
     uzyte_przez INTEGER, uzyte INTEGER, opis TEXT);
   CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS osady (gracz_id INTEGER PRIMARY KEY REFERENCES gracze(id) ON DELETE CASCADE, dane TEXT NOT NULL, zmieniona INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS stany (
     gracz_id INTEGER PRIMARY KEY REFERENCES gracze(id) ON DELETE CASCADE,
     rev INTEGER NOT NULL, dane TEXT NOT NULL, zmieniony INTEGER NOT NULL, urzadzenie TEXT);
@@ -222,6 +224,50 @@ const trasy = {
     return { rev: rev + 1 };
   },
 
+  // ---------- osada ----------
+  'GET /osada': (req) => zOsada(req, () => ({})),
+  'POST /osada/buduj': async (req) => { const b = await czytajJson(req); return zOsada(req, (o, t) => blad(O.buduj(o, String(b.typ), Number(b.x), Number(b.y), t))); },
+  'POST /osada/ulepsz': async (req) => { const b = await czytajJson(req); return zOsada(req, (o, t) => blad(O.ulepsz(o, Number(b.id), t))); },
+  'POST /osada/anuluj': async (req) => { const b = await czytajJson(req); return zOsada(req, (o) => blad(O.anuluj(o, Number(b.id)))); },
+  'POST /osada/przesun': async (req) => { const b = await czytajJson(req); return zOsada(req, (o) => blad(O.przesun(o, Number(b.id), Number(b.x), Number(b.y)))); },
+  'POST /osada/zbierz': async (req) => {
+    const b = await czytajJson(req);
+    return zOsada(req, (o) => {
+      const ids = b.id === 'wszystko' ? o.budynki.filter((x) => O.BUDYNKI[x.typ].produkcja).map((x) => x.id) : [Number(b.id)];
+      const zebrane = {}; let komunikat = null;
+      for (const id of ids) {
+        const r = O.zbierz(o, id);
+        if (r.ile) zebrane[r.surowiec] = (zebrane[r.surowiec] || 0) + r.ile;
+        else if (ids.length === 1) komunikat = r.blad;
+      }
+      if (komunikat && !Object.keys(zebrane).length) throw new Blad(400, komunikat);
+      return { zebrane };
+    });
+  },
+  'POST /osada/wyprawa/start': async (req) => {
+    const b = await czytajJson(req);
+    return zOsada(req, (o, t) => {
+      const poziom = O.LUP[b.poziom] ? b.poziom : 'wedrowiec';
+      const id = crypto.randomBytes(8).toString('hex');
+      const lista = Object.entries(o.wyprawy || {}).sort((a, c) => a[1].start - c[1].start);
+      o.wyprawy = Object.fromEntries(lista.slice(-2));
+      o.wyprawy[id] = { start: t, poziom };
+      return { wyprawa: id, premie: O.premieBitwy(o) };
+    });
+  },
+  'POST /osada/wyprawa/koniec': async (req) => {
+    const b = await czytajJson(req);
+    return zOsada(req, (o, t) => {
+      const w = (o.wyprawy || {})[String(b.id)];
+      if (!w) throw new Blad(400, 'Ta wyprawa została już rozliczona.');
+      if (t - w.start < O.MIN_CZAS_WYPRAWY) throw new Blad(400, 'Bitwa trwała za krótko, żeby ją rozliczyć.');
+      delete o.wyprawy[String(b.id)];
+      const wygrana = b.wynik === 'win';
+      o.statystyki[wygrana ? 'wygrane' : 'przegrane']++;
+      return { lup: O.dodajLup(o, O.lup(w.poziom, wygrana)) };
+    });
+  },
+
   // ---------- administrator ----------
   'GET /admin/haslo-gry': (req) => { admin(req); return { haslo: hasloGry() }; },
   'POST /admin/haslo-gry': async (req) => {
@@ -247,6 +293,23 @@ const trasy = {
     return { nick: g.nick, haslo: h };
   },
 };
+
+// Wczytuje osadę gracza, przesuwa czas do teraz, wykonuje akcję w transakcji i zapisuje.
+function blad(msg) { if (msg) throw new Blad(400, msg); return {}; }
+function zOsada(req, akcja) {
+  const s = sesja(req);
+  const t = teraz();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const w = db.prepare('SELECT dane FROM osady WHERE gracz_id = ?').get(s.id);
+    const o = w ? JSON.parse(w.dane) : O.nowaOsada(t);
+    const gotowe = O.uplyw(o, t);
+    const wynik = akcja(o, t) || {};
+    db.prepare('INSERT INTO osady (gracz_id, dane, zmieniona) VALUES (?, ?, ?) ON CONFLICT(gracz_id) DO UPDATE SET dane = excluded.dane, zmieniona = excluded.zmieniona').run(s.id, JSON.stringify(o), t);
+    db.exec('COMMIT');
+    return { ...wynik, osada: o, teraz: t, gotowe };
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
 
 function admin(req) {
   const s = sesja(req);
