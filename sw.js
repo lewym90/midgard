@@ -1,5 +1,5 @@
 // Midgard — praca bez internetu. Kod: najpierw sieć (szybkie aktualizacje), grafiki i czcionki: najpierw pamięć.
-const CACHE = 'midgard-v0.10.0';
+const CACHE = 'midgard-v0.10.1';
 const AUDIO_CACHE = 'midgard-audio-v1'; // osobno, żeby muzyka nie pobierała się od nowa przy każdej wersji
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
@@ -12,7 +12,7 @@ const CORE = [
   ...['berserker', 'tarczowniczka', 'volva', 'skald', 'jarl', 'mistrz-run', 'lowczyni', 'ulfhedinn'].flatMap((k) => [`assets/img/bohaterowie/${k}-zeton.webp`, `assets/img/bohaterowie/${k}-karta.webp`]),
   ...['woje', 'tarczownicy', 'lucznicy', 'oszczepnicy', 'berserkerzy'].map((k) => `assets/img/oddzialy/${k}-zeton.webp`),
   ...['ik-wojsko', 'ik-valhalla', 'ik-doswiadczenie', 'ik-szkolenie', 'ik-werbunek', 'ik-utrzymanie'].map((k) => `assets/img/osada/${k}.webp`),
-  'assets/img/wrogowie/draugr-zeton.webp', 'assets/img/wrogowie/lucznik-zeton.webp', 'assets/img/wrogowie/pan-kurhanu-zeton.webp',
+  ...['draugr', 'lucznik', 'pan-kurhanu', 'huskarl', 'lucznik-jarla', 'jarl-ketil', 'jarl-ragna', 'jarl-thorgrim'].map((k) => `assets/img/wrogowie/${k}-zeton.webp`),
   'assets/fonts/cinzel-latin-700-normal.woff2', 'assets/fonts/cinzel-latin-ext-700-normal.woff2',
   'assets/fonts/alegreya-sans-latin-400-normal.woff2', 'assets/fonts/alegreya-sans-latin-ext-400-normal.woff2',
   'assets/fonts/alegreya-sans-latin-500-normal.woff2', 'assets/fonts/alegreya-sans-latin-700-normal.woff2',

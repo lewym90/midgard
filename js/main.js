@@ -10,7 +10,7 @@ import { konto } from './konto.js';
 import * as KUI from './konto-ui.js';
 import { osada, opisRaportu } from './osada.js';
 
-const VERSION = '0.10.0';
+const VERSION = '0.10.1';
 const PREF_KEY = 'midgard.druzyna';
 const SAVE_KEY = 'midgard.bitwa.v1';
 const $ = (id) => document.getElementById(id);
@@ -53,6 +53,7 @@ function loadImages() {
     ...Object.fromEntries(HERO_ORDER.map((k) => ['zeton-' + k, `bohaterowie/${k}-zeton`])),
     ...Object.fromEntries(ODDZIALY_ORDER.map((k) => ['zeton-' + k, `oddzialy/${k}-zeton`])),
     'zeton-draugr': 'wrogowie/draugr-zeton', 'zeton-lucznik': 'wrogowie/lucznik-zeton', 'zeton-pan-kurhanu': 'wrogowie/pan-kurhanu-zeton',
+    ...Object.fromEntries(['huskarl', 'lucznik-jarla', 'jarl-ketil', 'jarl-ragna', 'jarl-thorgrim'].map((k) => ['zeton-' + k, `wrogowie/${k}-zeton`])),
     ...Object.fromEntries(['dlugi_dom', 'dlugi_dom-2', 'brama', 'wieza', 'kamien', 'palisada'].map((k) => ['bud-' + k, `osada/${k}`])),
   };
   const out = {};
